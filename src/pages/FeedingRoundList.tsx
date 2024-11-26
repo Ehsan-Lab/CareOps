@@ -1,8 +1,9 @@
 import React from 'react';
-import { Utensils, Plus, Play, CheckCircle, Pencil, Trash2 } from 'lucide-react';
+import { Utensils, Plus, Play, CheckCircle, Pencil, Trash2, Camera, ImageOff } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useFirebaseQuery } from '../hooks/useFirebaseQuery';
 import { FeedingRoundModal } from '../components/modals/FeedingRoundModal';
+import { FeedingRoundPhotosModal } from '../components/modals/FeedingRoundPhotosModal';
 import { feedingRoundServices } from '../services/firebase';
 import { format } from 'date-fns';
 import { FeedingRound } from '../types';
@@ -10,6 +11,7 @@ import { FeedingRound } from '../types';
 const FeedingRoundList: React.FC = () => {
   const { feedingRounds = [] } = useFirebaseQuery();
   const [isModalOpen, setIsModalOpen] = React.useState(false);
+  const [isPhotosModalOpen, setIsPhotosModalOpen] = React.useState(false);
   const [selectedRound, setSelectedRound] = React.useState<FeedingRound | null>(null);
   const queryClient = useQueryClient();
 
@@ -39,6 +41,11 @@ const FeedingRoundList: React.FC = () => {
         alert('Failed to delete feeding round');
       }
     }
+  };
+
+  const handleViewPhotos = (round: FeedingRound) => {
+    setSelectedRound(round);
+    setIsPhotosModalOpen(true);
   };
 
   const getStatusColor = (status: string) => {
@@ -154,6 +161,19 @@ const FeedingRoundList: React.FC = () => {
                               </button>
                             </>
                           )}
+                          {round.status === 'COMPLETED' && (
+                            <button
+                              className="text-purple-600 hover:text-purple-900"
+                              onClick={() => handleViewPhotos(round)}
+                              title={round.driveLink ? "View Photos" : "Add Photos"}
+                            >
+                              {round.driveLink ? (
+                                <Camera className="h-4 w-4" />
+                              ) : (
+                                <ImageOff className="h-4 w-4" />
+                              )}
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -173,6 +193,17 @@ const FeedingRoundList: React.FC = () => {
         }}
         round={selectedRound}
       />
+
+      {selectedRound && (
+        <FeedingRoundPhotosModal
+          isOpen={isPhotosModalOpen}
+          onClose={() => {
+            setIsPhotosModalOpen(false);
+            setSelectedRound(null);
+          }}
+          round={selectedRound}
+        />
+      )}
     </div>
   );
 };

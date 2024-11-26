@@ -19,6 +19,7 @@ export interface FeedingRound {
   status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED';
   allocatedAmount: number;
   categoryId: string;
+  driveLink?: string;
   createdAt?: any;
   updatedAt?: any;
 }

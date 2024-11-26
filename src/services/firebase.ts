@@ -8,10 +8,14 @@ import {
   query,
   where,
   Timestamp,
-  runTransaction
+  runTransaction,
+  arrayUnion,
+  arrayRemove,
+  deleteField
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { Donor, Donation, FeedingRound, TreasuryCategory } from '../types';
+import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 
 // Collection references
 const DONORS = 'donors';
@@ -246,6 +250,77 @@ export const feedingRoundServices = {
       });
     } catch (error) {
       console.error('Error deleting feeding round:', error);
+      throw error;
+    }
+  },
+
+  uploadPhotos: async (roundId: string, files: File[]) => {
+    try {
+      const storage = getStorage();
+      const uploadPromises = files.map(async (file) => {
+        const storageRef = ref(storage, `feeding-rounds/${roundId}/${file.name}`);
+        await uploadBytes(storageRef, file);
+        const url = await getDownloadURL(storageRef);
+        return url;
+      });
+
+      const urls = await Promise.all(uploadPromises);
+
+      // Update feeding round with new photo URLs
+      const docRef = doc(db, FEEDING_ROUNDS, roundId);
+      await updateDoc(docRef, {
+        photos: arrayUnion(...urls),
+        updatedAt: Timestamp.now()
+      });
+
+      return urls;
+    } catch (error) {
+      console.error('Error uploading photos:', error);
+      throw error;
+    }
+  },
+
+  deletePhoto: async (roundId: string, photoUrl: string) => {
+    try {
+      const storage = getStorage();
+      // Delete from storage
+      const storageRef = ref(storage, photoUrl);
+      await deleteObject(storageRef);
+
+      // Remove URL from feeding round document
+      const docRef = doc(db, FEEDING_ROUNDS, roundId);
+      await updateDoc(docRef, {
+        photos: arrayRemove(photoUrl),
+        updatedAt: Timestamp.now()
+      });
+    } catch (error) {
+      console.error('Error deleting photo:', error);
+      throw error;
+    }
+  },
+
+  addDriveLink: async (roundId: string, driveLink: string) => {
+    try {
+      const docRef = doc(db, FEEDING_ROUNDS, roundId);
+      await updateDoc(docRef, {
+        driveLink,
+        updatedAt: Timestamp.now()
+      });
+    } catch (error) {
+      console.error('Error adding drive link:', error);
+      throw error;
+    }
+  },
+
+  removeDriveLink: async (roundId: string) => {
+    try {
+      const docRef = doc(db, FEEDING_ROUNDS, roundId);
+      await updateDoc(docRef, {
+        driveLink: deleteField(),
+        updatedAt: Timestamp.now()
+      });
+    } catch (error) {
+      console.error('Error removing drive link:', error);
       throw error;
     }
   }
