@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import { Users, Plus, Pencil, Trash2 } from 'lucide-react';
 import { useStore } from '../store';
 import { DonorModal } from '../components/modals/DonorModal';
@@ -13,6 +13,17 @@ const DonorList: React.FC = () => {
   const [isAddModalOpen, setIsAddModalOpen] = React.useState(false);
   const [selectedDonor, setSelectedDonor] = React.useState<Donor | null>(null);
   const queryClient = useQueryClient();
+  const [sortField, setSortField] = useState<'name' | 'contact'>('name');
+  const [searchTerm, setSearchTerm] = useState('');
+
+  const sortedAndFilteredDonors = useMemo(() => {
+    return donors
+      ?.filter(donor => 
+        donor.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        donor.contact.toLowerCase().includes(searchTerm.toLowerCase())
+      )
+      .sort((a, b) => a[sortField].localeCompare(b[sortField]));
+  }, [donors, sortField, searchTerm]);
 
   React.useEffect(() => {
     console.log('Query Donors:', queryDonors);
@@ -24,16 +35,30 @@ const DonorList: React.FC = () => {
   }
 
   if (isLoading) {
-    return <div className="text-gray-600">Loading donors...</div>;
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+      </div>
+    );
   }
 
   const handleDelete = async (id: string) => {
     if (window.confirm('Are you sure you want to delete this donor?')) {
       try {
+        // Optimistically remove the donor from the UI
+        queryClient.setQueryData(['donors'], (old: Donor[] | undefined) => 
+          old?.filter(donor => donor.id !== id)
+        );
+
+        // Perform the actual delete
         await donorServices.delete(id);
+        
+        // Refetch to ensure sync
         await queryClient.invalidateQueries({ queryKey: ['donors'] });
       } catch (error) {
         console.error('Error deleting donor:', error);
+        // Revert optimistic update on error
+        queryClient.invalidateQueries({ queryKey: ['donors'] });
         alert('Failed to delete donor');
       }
     }
@@ -73,6 +98,16 @@ const DonorList: React.FC = () => {
         </div>
       </div>
 
+      <div className="mt-4">
+        <input
+          type="text"
+          placeholder="Search donors..."
+          className="px-4 py-2 border rounded-md"
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+        />
+      </div>
+
       <div className="mt-8 flow-root">
         <div className="-mx-4 -my-2 overflow-x-auto sm:-mx-6 lg:-mx-8">
           <div className="inline-block min-w-full py-2 align-middle sm:px-6 lg:px-8">
@@ -92,8 +127,8 @@ const DonorList: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 bg-white">
-                  {Array.isArray(donors) && donors.length > 0 ? (
-                    donors.map((donor) => {
+                  {Array.isArray(sortedAndFilteredDonors) && sortedAndFilteredDonors.length > 0 ? (
+                    sortedAndFilteredDonors.map((donor) => {
                       console.log('Rendering donor:', donor);
                       return (
                         <tr key={donor.id}>
