@@ -27,10 +27,20 @@ export const useFirebaseQuery = () => {
     }
   });
 
-  const { isLoading: isLoadingDonations } = useQuery({
+  const { 
+    isLoading: isLoadingDonations,
+    data: donations 
+  } = useQuery({
     queryKey: ['donations'],
-    queryFn: donationServices.getAll,
-    onSuccess: setDonations
+    queryFn: async () => {
+      const data = await donationServices.getAll();
+      console.log('Donations data fetched:', data);
+      return data;
+    },
+    onSuccess: (data) => {
+      console.log('Setting donations in store:', data);
+      setDonations(data);
+    }
   });
 
   const { isLoading: isLoadingFeedingRounds } = useQuery({
@@ -61,6 +71,7 @@ export const useFirebaseQuery = () => {
     isLoading: isLoadingDonors || isLoadingDonations || isLoadingFeedingRounds || isLoadingTreasury,
     donors,
     donorsError,
-    treasuryCategories
+    treasuryCategories,
+    donations
   };
 };

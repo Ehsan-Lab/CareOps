@@ -75,6 +75,14 @@ export const donorServices = {
 };
 
 // Donation Services
+interface CreateDonationData {
+  donorId: string;
+  amount: number;
+  purpose: string;
+  categoryId: string;
+  date: string;
+}
+
 export const donationServices = {
   getAll: async () => {
     try {
@@ -89,19 +97,11 @@ export const donationServices = {
     }
   },
 
-  create: async (data: Omit<Donation, 'id'>) => {
+  create: async (data: CreateDonationData) => {
     try {
-      // Start a transaction to update both donation and treasury
       await runTransaction(db, async (transaction) => {
-        // Add the donation
-        const donationRef = doc(collection(db, DONATIONS));
-        transaction.set(donationRef, {
-          ...data,
-          createdAt: Timestamp.now()
-        });
-
-        // Update treasury balance
-        const categoryRef = doc(db, TREASURY, data.categoryId.toString());
+        // First, do all reads
+        const categoryRef = doc(db, TREASURY, String(data.categoryId));
         const categoryDoc = await transaction.get(categoryRef);
         
         if (!categoryDoc.exists()) {
@@ -109,8 +109,22 @@ export const donationServices = {
         }
 
         const currentBalance = categoryDoc.data().balance || 0;
+
+        // Then, do all writes
+        // 1. Create donation
+        const donationRef = doc(collection(db, DONATIONS));
+        transaction.set(donationRef, {
+          donorId: String(data.donorId),
+          amount: Number(data.amount),
+          purpose: data.purpose,
+          categoryId: String(data.categoryId),
+          date: data.date,
+          createdAt: Timestamp.now()
+        });
+
+        // 2. Update treasury balance
         transaction.update(categoryRef, {
-          balance: currentBalance + data.amount,
+          balance: currentBalance + Number(data.amount),
           updatedAt: Timestamp.now()
         });
       });

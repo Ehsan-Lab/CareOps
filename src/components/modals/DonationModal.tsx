@@ -11,12 +11,20 @@ interface DonationModalProps {
   onClose: () => void;
 }
 
+interface DonationFormData {
+  donorId: string;
+  amount: string;
+  purpose: string;
+  categoryId: string;
+  date: string;
+}
+
 export const DonationModal: React.FC<DonationModalProps> = ({ isOpen, onClose }) => {
   const queryClient = useQueryClient();
   const { donors } = useFirebaseQuery();
   const categories = useStore((state) => state.treasuryCategories);
   
-  const { register, handleSubmit, formState: { errors } } = useForm({
+  const { register, handleSubmit, formState: { errors } } = useForm<DonationFormData>({
     defaultValues: {
       donorId: '',
       amount: '',
@@ -26,19 +34,20 @@ export const DonationModal: React.FC<DonationModalProps> = ({ isOpen, onClose })
     }
   });
 
-  const onSubmit = async (data: any) => {
+  const onSubmit = async (data: DonationFormData) => {
     try {
       await donationServices.create({
         ...data,
         amount: parseFloat(data.amount),
-        donorId: parseInt(data.donorId),
-        categoryId: parseInt(data.categoryId)
+        donorId: String(data.donorId),
+        categoryId: String(data.categoryId)
       });
       queryClient.invalidateQueries({ queryKey: ['donations'] });
       queryClient.invalidateQueries({ queryKey: ['treasury'] });
       onClose();
     } catch (error) {
       console.error('Error saving donation:', error);
+      alert('Failed to save donation. Please try again.');
     }
   };
 

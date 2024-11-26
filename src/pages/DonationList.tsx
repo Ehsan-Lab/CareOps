@@ -3,11 +3,21 @@ import { Heart, Plus } from 'lucide-react';
 import { useStore } from '../store';
 import { format } from 'date-fns';
 import { DonationModal } from '../components/modals/DonationModal';
+import { useFirebaseQuery } from '../hooks/useFirebaseQuery';
 
 const DonationList: React.FC = () => {
-  const donations = useStore((state) => state.donations);
-  const donors = useStore((state) => state.donors);
+  const { donations, donors, treasuryCategories } = useFirebaseQuery();
   const [isAddModalOpen, setIsAddModalOpen] = React.useState(false);
+
+  const getDonorName = (donorId: string) => {
+    const donor = donors?.find(d => d.id === donorId);
+    return donor?.name || 'Unknown Donor';
+  };
+
+  const getCategoryName = (categoryId: string) => {
+    const category = treasuryCategories?.find(c => c.id === categoryId);
+    return category?.name || 'Unknown Category';
+  };
 
   return (
     <div>
@@ -47,6 +57,9 @@ const DonationList: React.FC = () => {
                       Amount
                     </th>
                     <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                      Category
+                    </th>
+                    <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                       Purpose
                     </th>
                     <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
@@ -55,25 +68,25 @@ const DonationList: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 bg-white">
-                  {donations.map((donation) => {
-                    const donor = donors.find((d) => d.id === donation.donorId);
-                    return (
-                      <tr key={donation.id}>
-                        <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-6">
-                          {donor?.name || 'Unknown Donor'}
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                          ${donation.amount.toFixed(2)}
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                          {donation.purpose}
-                        </td>
-                        <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                          {format(new Date(donation.date), 'MMM d, yyyy')}
-                        </td>
-                      </tr>
-                    );
-                  })}
+                  {donations?.map((donation) => (
+                    <tr key={donation.id}>
+                      <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-6">
+                        {getDonorName(donation.donorId)}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                        ${Number(donation.amount).toFixed(2)}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                        {getCategoryName(donation.categoryId)}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                        {donation.purpose}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                        {format(new Date(donation.date), 'MMM d, yyyy')}
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
