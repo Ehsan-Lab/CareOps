@@ -215,7 +215,7 @@ export const treasuryServices = {
     }
   },
 
-  adjustBalance: async (id: string, amount: number) => {
+  adjustBalance: async (id: string, amount: number, isDeduction: boolean = false) => {
     try {
       const docRef = doc(db, TREASURY, id);
       await runTransaction(db, async (transaction) => {
@@ -225,7 +225,9 @@ export const treasuryServices = {
         }
 
         const currentBalance = doc.data().balance || 0;
-        const newBalance = currentBalance + amount;
+        // If it's a deduction, automatically make the amount negative
+        const adjustedAmount = isDeduction ? -Math.abs(amount) : amount;
+        const newBalance = currentBalance + adjustedAmount;
         
         if (newBalance < 0) {
           throw new Error('Insufficient funds');

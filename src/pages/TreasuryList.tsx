@@ -26,6 +26,18 @@ const TreasuryList: React.FC = () => {
     }
   };
 
+  const handleDeduct = async (id: string) => {
+    const amount = prompt('Enter amount to deduct:');
+    if (!amount) return;
+
+    try {
+      await treasuryServices.adjustBalance(id, parseFloat(amount), true);
+      queryClient.invalidateQueries({ queryKey: ['treasury'] });
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Failed to deduct amount');
+    }
+  };
+
   const totalBalance = categories.reduce((sum, cat) => sum + cat.balance, 0);
 
   return (
@@ -112,7 +124,7 @@ const TreasuryList: React.FC = () => {
                           </button>
                           <button
                             className="text-red-600 hover:text-red-900"
-                            onClick={() => handleAdjustBalance(category.id, -1)}
+                            onClick={() => handleDeduct(category.id)}
                           >
                             <TrendingDown className="h-4 w-4" />
                           </button>
