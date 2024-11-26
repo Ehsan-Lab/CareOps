@@ -4,6 +4,7 @@ import { X } from 'lucide-react';
 import { donationServices } from '../../services/firebase';
 import { useQueryClient } from '@tanstack/react-query';
 import { useStore } from '../../store';
+import { useFirebaseQuery } from '../../hooks/useFirebaseQuery';
 
 interface DonationModalProps {
   isOpen: boolean;
@@ -12,7 +13,7 @@ interface DonationModalProps {
 
 export const DonationModal: React.FC<DonationModalProps> = ({ isOpen, onClose }) => {
   const queryClient = useQueryClient();
-  const donors = useStore((state) => state.donors);
+  const { donors } = useFirebaseQuery();
   const categories = useStore((state) => state.treasuryCategories);
   
   const { register, handleSubmit, formState: { errors } } = useForm({
@@ -64,7 +65,7 @@ export const DonationModal: React.FC<DonationModalProps> = ({ isOpen, onClose })
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
               >
                 <option value="">Select a donor</option>
-                {donors.map((donor) => (
+                {donors?.map((donor) => (
                   <option key={donor.id} value={donor.id}>{donor.name}</option>
                 ))}
               </select>

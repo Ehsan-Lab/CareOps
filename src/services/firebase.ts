@@ -190,22 +190,24 @@ export const treasuryServices = {
   getAll: async () => {
     try {
       const querySnapshot = await getDocs(collection(db, TREASURY));
-      return querySnapshot.docs.map(doc => ({
+      const categories = querySnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
+      console.log('Raw categories from Firebase:', categories);
+      return categories;
     } catch (error) {
       console.error('Error fetching treasury categories:', error);
       throw error;
     }
   },
 
-  create: async (data: { name: string }) => {
+  create: async (data: { name: string; balance: number }) => {
     try {
       await addDoc(collection(db, TREASURY), {
-        name: data.name,
-        balance: 0,
-        createdAt: Timestamp.now()
+        ...data,
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now()
       });
     } catch (error) {
       console.error('Error creating treasury category:', error);
@@ -236,6 +238,29 @@ export const treasuryServices = {
       });
     } catch (error) {
       console.error('Error adjusting treasury balance:', error);
+      throw error;
+    }
+  },
+
+  update: async (id: string, data: Partial<TreasuryCategory>) => {
+    try {
+      const docRef = doc(db, TREASURY, id);
+      await updateDoc(docRef, {
+        ...data,
+        updatedAt: Timestamp.now()
+      });
+    } catch (error) {
+      console.error('Error updating treasury category:', error);
+      throw error;
+    }
+  },
+
+  delete: async (id: string) => {
+    try {
+      const docRef = doc(db, TREASURY, id);
+      await deleteDoc(docRef);
+    } catch (error) {
+      console.error('Error deleting treasury category:', error);
       throw error;
     }
   }

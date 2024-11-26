@@ -5,7 +5,8 @@ import {
   enableIndexedDbPersistence,
   collection, 
   getDocs, 
-  addDoc 
+  addDoc,
+  deleteDoc
 } from 'firebase/firestore';
 
 const firebaseConfig = {
@@ -38,6 +39,13 @@ const validateFirebaseConnection = async () => {
   }
 };
 
+const defaultCategories = [
+  { name: 'General Fund', balance: 0, type: 'INCOME' },
+  { name: 'Medical Support', balance: 0, type: 'EXPENSE' },
+  { name: 'Feeding', balance: 0, type: 'EXPENSE' },
+  { name: 'Emergency Aid', balance: 0, type: 'EXPENSE' }
+];
+
 // Modify your initialize function
 const initializeFirestore = async () => {
   try {
@@ -49,38 +57,40 @@ const initializeFirestore = async () => {
 
     // Rest of your initialization code...
     if (typeof window !== 'undefined') {
-      await enableIndexedDbPersistence(db, {
-        synchronizeTabs: true
-      });
+      await enableIndexedDbPersistence(db);
     }
 
     if (import.meta.env.DEV) {
       connectFirestoreEmulator(db, 'localhost', 8080);
     }
 
-    const treasurySnapshot = await getDocs(collection(db, 'treasury'));
+    // Check and create default categories
+    const treasuryRef = collection(db, 'treasury');
+    const treasurySnapshot = await getDocs(treasuryRef);
     
-    if (treasurySnapshot.empty) {
-      const defaultCategories = [
-        { name: 'General Fund', balance: 0 },
-        { name: 'Feeding Program', balance: 0 },
-        { name: 'Emergency Aid', balance: 0 }
-      ];
-
-      for (const category of defaultCategories) {
-        await addDoc(collection(db, 'treasury'), category);
-      }
-      
-      console.log('Default treasury categories created');
+    // Delete existing categories
+    for (const doc of treasurySnapshot.docs) {
+      await deleteDoc(doc.ref);
     }
-  } catch (err: any) {
-    console.error('Firestore initialization error:', err);
-    if (err.code === 'failed-precondition') {
-      console.warn('Multiple tabs open, persistence can only be enabled in one tab at a time.');
-    } else if (err.code === 'unimplemented') {
-      console.warn('The current browser does not support persistence.');
-    } else {
-      throw err; // Re-throw other errors
+
+    // Create new categories
+    for (const category of defaultCategories) {
+      await addDoc(treasuryRef, {
+        ...category,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      });
+    }
+  } catch (error: unknown) {
+    if (error instanceof Error) {
+      console.error('Firestore initialization error:', error);
+      if ('code' in error && error.code === 'failed-precondition') {
+        console.warn('Multiple tabs open, persistence can only be enabled in one tab at a time.');
+      } else if ('code' in error && error.code === 'unimplemented') {
+        console.warn('The current browser does not support persistence.');
+      } else {
+        throw error;
+      }
     }
   }
 };
