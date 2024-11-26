@@ -1,6 +1,5 @@
 import React, { useState, useMemo } from 'react';
 import { Users, Plus, Pencil, Trash2 } from 'lucide-react';
-import { useStore } from '../store';
 import { DonorModal } from '../components/modals/DonorModal';
 import { donorServices } from '../services/firebase';
 import { useQueryClient } from '@tanstack/react-query';
@@ -9,7 +8,7 @@ import { useFirebaseQuery } from '../hooks/useFirebaseQuery';
 
 const DonorList: React.FC = () => {
   const { isLoading, donors: queryDonors, donorsError } = useFirebaseQuery();
-  const donors = queryDonors || [];
+  const donors = useMemo(() => queryDonors || [], [queryDonors]);
   const [isAddModalOpen, setIsAddModalOpen] = React.useState(false);
   const [selectedDonor, setSelectedDonor] = React.useState<Donor | null>(null);
   const queryClient = useQueryClient();
@@ -116,7 +115,12 @@ const DonorList: React.FC = () => {
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6">
-                      Name
+                      <button 
+                        onClick={() => setSortField(sortField === 'name' ? 'contact' : 'name')}
+                        className="flex items-center gap-1"
+                      >
+                        Name {sortField === 'name' && '↓'}
+                      </button>
                     </th>
                     <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                       Contact
@@ -142,7 +146,7 @@ const DonorList: React.FC = () => {
                             <div className="flex justify-end gap-2">
                               <button
                                 className="text-indigo-600 hover:text-indigo-900"
-                                onClick={() => handleEdit(donor)}
+                                onClick={() => handleEdit({...donor, id: String(donor.id)})}
                               >
                                 <Pencil className="h-4 w-4" />
                               </button>
