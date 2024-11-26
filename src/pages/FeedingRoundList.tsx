@@ -123,7 +123,7 @@ const FeedingRoundList: React.FC = () => {
                               <CheckCircle className="h-4 w-4" />
                             </button>
                           )}
-                          {round.status === 'PENDING' && (
+                          {round.status !== 'COMPLETED' && (
                             <button
                               className="text-emerald-600 hover:text-emerald-900"
                               onClick={() => handleEdit(round)}

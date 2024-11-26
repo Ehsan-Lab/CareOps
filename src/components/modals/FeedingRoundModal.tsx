@@ -15,6 +15,7 @@ interface FeedingRoundModalProps {
 interface FeedingRoundFormData {
   date: string;
   allocatedAmount: string;
+  status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED';
 }
 
 export const FeedingRoundModal: React.FC<FeedingRoundModalProps> = ({ 
@@ -29,10 +30,12 @@ export const FeedingRoundModal: React.FC<FeedingRoundModalProps> = ({
   const { register, handleSubmit, reset, formState: { errors } } = useForm<FeedingRoundFormData>({
     defaultValues: round ? {
       date: round.date,
-      allocatedAmount: round.allocatedAmount.toString()
+      allocatedAmount: round.allocatedAmount.toString(),
+      status: round.status
     } : {
       date: new Date().toISOString().split('T')[0],
-      allocatedAmount: ''
+      allocatedAmount: '',
+      status: 'PENDING'
     }
   });
 
@@ -40,12 +43,14 @@ export const FeedingRoundModal: React.FC<FeedingRoundModalProps> = ({
     if (round) {
       reset({
         date: round.date,
-        allocatedAmount: round.allocatedAmount.toString()
+        allocatedAmount: round.allocatedAmount.toString(),
+        status: round.status
       });
     } else {
       reset({
         date: new Date().toISOString().split('T')[0],
-        allocatedAmount: ''
+        allocatedAmount: '',
+        status: 'PENDING'
       });
     }
   }, [round, reset]);
@@ -124,6 +129,20 @@ export const FeedingRoundModal: React.FC<FeedingRoundModalProps> = ({
                 <p className="mt-1 text-sm text-red-600">{errors.allocatedAmount.message}</p>
               )}
             </div>
+
+            {round && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Status</label>
+                <select
+                  {...register('status')}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 sm:text-sm"
+                >
+                  <option value="PENDING">Pending</option>
+                  <option value="IN_PROGRESS">In Progress</option>
+                  <option value="COMPLETED">Completed</option>
+                </select>
+              </div>
+            )}
 
             {feedingCategory && (
               <p className="text-sm text-gray-500">
