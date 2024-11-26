@@ -7,6 +7,7 @@ import DonationList from './pages/DonationList';
 import FeedingRoundList from './pages/FeedingRoundList';
 import TreasuryList from './pages/TreasuryList';
 import TreasuryCategories from './pages/TreasuryCategories';
+import BeneficiaryList from './pages/BeneficiaryList';
 import { useFirebaseQuery } from './hooks/useFirebaseQuery';
 
 const queryClient = new QueryClient({
@@ -38,6 +39,7 @@ function AppContent() {
         <Route path="feeding-rounds" element={<FeedingRoundList />} />
         <Route path="treasury" element={<TreasuryList />} />
         <Route path="treasury-categories" element={<TreasuryCategories />} />
+        <Route path="beneficiaries" element={<BeneficiaryList />} />
       </Route>
     </Routes>
   );

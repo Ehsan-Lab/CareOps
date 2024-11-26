@@ -29,3 +29,17 @@ export interface TreasuryCategory {
   name: string;
   balance: number;
 }
+
+export type SupportType = 'MEDICAL' | 'EDUCATION' | 'FOOD' | 'HOUSING' | 'EMERGENCY';
+
+export interface Beneficiary {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  address: string;
+  supportType: SupportType;
+  status: 'ACTIVE' | 'INACTIVE';
+  createdAt?: any;
+  updatedAt?: any;
+}

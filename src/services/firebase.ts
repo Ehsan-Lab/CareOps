@@ -14,7 +14,7 @@ import {
   deleteField
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
-import { Donor, Donation, FeedingRound, TreasuryCategory } from '../types';
+import { Donor, Donation, FeedingRound, TreasuryCategory, Beneficiary } from '../types';
 import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 
 // Collection references
@@ -22,6 +22,7 @@ const DONORS = 'donors';
 const DONATIONS = 'donations';
 const FEEDING_ROUNDS = 'feedingRounds';
 const TREASURY = 'treasury';
+const BENEFICIARIES = 'beneficiaries';
 
 // Donor Services
 export const donorServices = {
@@ -404,6 +405,62 @@ export const treasuryServices = {
       await deleteDoc(docRef);
     } catch (error) {
       console.error('Error deleting treasury category:', error);
+      throw error;
+    }
+  }
+};
+
+// Beneficiary Services
+export const beneficiaryServices = {
+  getAll: async () => {
+    try {
+      const querySnapshot = await getDocs(collection(db, BENEFICIARIES));
+      return querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Beneficiary[];
+    } catch (error) {
+      console.error('Error fetching beneficiaries:', error);
+      throw error;
+    }
+  },
+
+  create: async (data: Omit<Beneficiary, 'id' | 'status' | 'createdAt' | 'updatedAt'>) => {
+    try {
+      await addDoc(collection(db, BENEFICIARIES), {
+        ...data,
+        status: 'ACTIVE',
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now()
+      });
+    } catch (error) {
+      console.error('Error creating beneficiary:', error);
+      throw error;
+    }
+  },
+
+  update: async (id: string, data: Partial<Beneficiary>) => {
+    try {
+      const docRef = doc(db, BENEFICIARIES, id);
+      await updateDoc(docRef, {
+        ...data,
+        updatedAt: Timestamp.now()
+      });
+    } catch (error) {
+      console.error('Error updating beneficiary:', error);
+      throw error;
+    }
+  },
+
+  delete: async (id: string) => {
+    try {
+      const docRef = doc(db, BENEFICIARIES, id);
+      await updateDoc(docRef, {
+        status: 'INACTIVE',
+        updatedAt: Timestamp.now()
+      });
+    } catch (error) {
+      console.error('Error deactivating beneficiary:', error);
       throw error;
     }
   }
