@@ -153,27 +153,28 @@ export const feedingRoundServices = {
   create: async (data: Omit<FeedingRound, 'id'>) => {
     try {
       await runTransaction(db, async (transaction) => {
-        // Create feeding round
-        const roundRef = doc(collection(db, FEEDING_ROUNDS));
-        transaction.set(roundRef, {
-          ...data,
-          status: 'PENDING',
-          createdAt: Timestamp.now()
-        });
-
-        // Deduct from treasury
-        const categoryRef = doc(db, TREASURY, data.categoryId.toString());
+        // First, do all reads
+        const categoryRef = doc(db, TREASURY, data.categoryId);
         const categoryDoc = await transaction.get(categoryRef);
         
         if (!categoryDoc.exists()) {
-          throw new Error('Treasury category not found');
+          throw new Error('Feeding category not found');
         }
 
         const currentBalance = categoryDoc.data().balance || 0;
         if (currentBalance < data.allocatedAmount) {
-          throw new Error('Insufficient funds in treasury');
+          throw new Error('Insufficient funds in feeding category');
         }
 
+        // Then, do all writes
+        // 1. Create feeding round
+        const roundRef = doc(collection(db, FEEDING_ROUNDS));
+        transaction.set(roundRef, {
+          ...data,
+          createdAt: Timestamp.now()
+        });
+
+        // 2. Update treasury balance
         transaction.update(categoryRef, {
           balance: currentBalance - data.allocatedAmount,
           updatedAt: Timestamp.now()
@@ -181,6 +182,19 @@ export const feedingRoundServices = {
       });
     } catch (error) {
       console.error('Error creating feeding round:', error);
+      throw error;
+    }
+  },
+
+  update: async (id: string, data: Partial<FeedingRound>) => {
+    try {
+      const docRef = doc(db, FEEDING_ROUNDS, id);
+      await updateDoc(docRef, {
+        ...data,
+        updatedAt: Timestamp.now()
+      });
+    } catch (error) {
+      console.error('Error updating feeding round:', error);
       throw error;
     }
   },

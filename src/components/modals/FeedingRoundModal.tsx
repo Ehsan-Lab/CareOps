@@ -4,39 +4,78 @@ import { X } from 'lucide-react';
 import { feedingRoundServices } from '../../services/firebase';
 import { useQueryClient } from '@tanstack/react-query';
 import { useStore } from '../../store';
+import { FeedingRound } from '../../types';
 
 interface FeedingRoundModalProps {
   isOpen: boolean;
   onClose: () => void;
+  round?: FeedingRound | null;
 }
 
-export const FeedingRoundModal: React.FC<FeedingRoundModalProps> = ({ isOpen, onClose }) => {
+interface FeedingRoundFormData {
+  date: string;
+  allocatedAmount: string;
+}
+
+export const FeedingRoundModal: React.FC<FeedingRoundModalProps> = ({ 
+  isOpen, 
+  onClose,
+  round 
+}) => {
   const queryClient = useQueryClient();
   const categories = useStore((state) => state.treasuryCategories);
+  const feedingCategory = categories.find(c => c.name.toLowerCase() === 'feeding');
   
-  const { register, handleSubmit, formState: { errors } } = useForm({
-    defaultValues: {
+  const { register, handleSubmit, reset, formState: { errors } } = useForm<FeedingRoundFormData>({
+    defaultValues: round ? {
+      date: round.date,
+      allocatedAmount: round.allocatedAmount.toString()
+    } : {
       date: new Date().toISOString().split('T')[0],
-      allocatedAmount: '',
-      defaultAmount: '',
-      categoryId: '',
-      status: 'PENDING'
+      allocatedAmount: ''
     }
   });
 
-  const onSubmit = async (data: any) => {
-    try {
-      await feedingRoundServices.create({
-        ...data,
-        allocatedAmount: parseFloat(data.allocatedAmount),
-        defaultAmount: parseFloat(data.defaultAmount),
-        categoryId: parseInt(data.categoryId)
+  React.useEffect(() => {
+    if (round) {
+      reset({
+        date: round.date,
+        allocatedAmount: round.allocatedAmount.toString()
       });
+    } else {
+      reset({
+        date: new Date().toISOString().split('T')[0],
+        allocatedAmount: ''
+      });
+    }
+  }, [round, reset]);
+
+  const onSubmit = async (data: FeedingRoundFormData) => {
+    if (!feedingCategory) {
+      alert('Feeding category not found');
+      return;
+    }
+
+    try {
+      if (round?.id) {
+        await feedingRoundServices.update(round.id, {
+          ...data,
+          allocatedAmount: parseFloat(data.allocatedAmount)
+        });
+      } else {
+        await feedingRoundServices.create({
+          ...data,
+          allocatedAmount: parseFloat(data.allocatedAmount),
+          status: 'PENDING',
+          categoryId: feedingCategory.id
+        });
+      }
       queryClient.invalidateQueries({ queryKey: ['feedingRounds'] });
       queryClient.invalidateQueries({ queryKey: ['treasury'] });
       onClose();
     } catch (error) {
-      console.error('Error creating feeding round:', error);
+      console.error('Error saving feeding round:', error);
+      alert(error instanceof Error ? error.message : 'Failed to save feeding round');
     }
   };
 
@@ -49,7 +88,9 @@ export const FeedingRoundModal: React.FC<FeedingRoundModalProps> = ({ isOpen, on
         
         <div className="relative w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-medium">New Feeding Round</h3>
+            <h3 className="text-lg font-medium">
+              {round ? 'Edit' : 'New'} Feeding Round
+            </h3>
             <button onClick={onClose} className="text-gray-400 hover:text-gray-500">
               <X className="h-5 w-5" />
             </button>
@@ -61,7 +102,7 @@ export const FeedingRoundModal: React.FC<FeedingRoundModalProps> = ({ isOpen, on
               <input
                 type="date"
                 {...register('date', { required: 'Date is required' })}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 sm:text-sm"
               />
               {errors.date && (
                 <p className="mt-1 text-sm text-red-600">{errors.date.message}</p>
@@ -69,46 +110,26 @@ export const FeedingRoundModal: React.FC<FeedingRoundModalProps> = ({ isOpen, on
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700">Allocated Amount</label>
+              <label className="block text-sm font-medium text-gray-700">Amount</label>
               <input
                 type="number"
                 step="0.01"
-                {...register('allocatedAmount', { required: 'Amount is required', min: 0 })}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                {...register('allocatedAmount', { 
+                  required: 'Amount is required',
+                  min: { value: 0, message: 'Amount must be positive' }
+                })}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 sm:text-sm"
               />
               {errors.allocatedAmount && (
                 <p className="mt-1 text-sm text-red-600">{errors.allocatedAmount.message}</p>
               )}
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Default Amount</label>
-              <input
-                type="number"
-                step="0.01"
-                {...register('defaultAmount', { required: 'Default amount is required', min: 0 })}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-              />
-              {errors.defaultAmount && (
-                <p className="mt-1 text-sm text-red-600">{errors.defaultAmount.message}</p>
-              )}
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Category</label>
-              <select
-                {...register('categoryId', { required: 'Category is required' })}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-              >
-                <option value="">Select a category</option>
-                {categories.map((category) => (
-                  <option key={category.id} value={category.id}>{category.name}</option>
-                ))}
-              </select>
-              {errors.categoryId && (
-                <p className="mt-1 text-sm text-red-600">{errors.categoryId.message}</p>
-              )}
-            </div>
+            {feedingCategory && (
+              <p className="text-sm text-gray-500">
+                Available balance: ${feedingCategory.balance.toFixed(2)}
+              </p>
+            )}
 
             <div className="flex justify-end gap-2">
               <button
@@ -122,7 +143,7 @@ export const FeedingRoundModal: React.FC<FeedingRoundModalProps> = ({ isOpen, on
                 type="submit"
                 className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
               >
-                Create Round
+                {round ? 'Update' : 'Create'} Round
               </button>
             </div>
           </form>

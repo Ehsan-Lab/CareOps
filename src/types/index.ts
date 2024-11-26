@@ -14,12 +14,13 @@ export interface Donation {
 }
 
 export interface FeedingRound {
-  id: number;
+  id: string;
   date: string;
-  allocatedAmount: number;
-  defaultAmount: number;
-  categoryId: number;
   status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED';
+  allocatedAmount: number;
+  categoryId: string;
+  createdAt?: any;
+  updatedAt?: any;
 }
 
 export interface TreasuryCategory {

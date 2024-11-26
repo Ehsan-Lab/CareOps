@@ -43,10 +43,20 @@ export const useFirebaseQuery = () => {
     }
   });
 
-  const { isLoading: isLoadingFeedingRounds } = useQuery({
+  const { 
+    isLoading: isLoadingFeedingRounds,
+    data: feedingRounds 
+  } = useQuery({
     queryKey: ['feedingRounds'],
-    queryFn: feedingRoundServices.getAll,
-    onSuccess: setFeedingRounds
+    queryFn: async () => {
+      const data = await feedingRoundServices.getAll();
+      console.log('Feeding rounds fetched:', data);
+      return data;
+    },
+    onSuccess: (data) => {
+      console.log('Setting feeding rounds in store:', data);
+      setFeedingRounds(data);
+    }
   });
 
   const { 
@@ -72,6 +82,7 @@ export const useFirebaseQuery = () => {
     donors,
     donorsError,
     treasuryCategories,
-    donations
+    donations,
+    feedingRounds
   };
 };
