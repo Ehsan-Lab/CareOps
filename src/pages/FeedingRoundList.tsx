@@ -1,5 +1,5 @@
 import React from 'react';
-import { Utensils, Plus, Play, CheckCircle, Pencil } from 'lucide-react';
+import { Utensils, Plus, Play, CheckCircle, Pencil, Trash2 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useFirebaseQuery } from '../hooks/useFirebaseQuery';
 import { FeedingRoundModal } from '../components/modals/FeedingRoundModal';
@@ -25,6 +25,19 @@ const FeedingRoundList: React.FC = () => {
     } catch (error) {
       console.error('Error updating status:', error);
       alert('Failed to update status');
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (window.confirm('Are you sure you want to delete this feeding round?')) {
+      try {
+        await feedingRoundServices.delete(id);
+        queryClient.invalidateQueries({ queryKey: ['feedingRounds'] });
+        queryClient.invalidateQueries({ queryKey: ['treasury'] });
+      } catch (error) {
+        console.error('Error deleting feeding round:', error);
+        alert('Failed to delete feeding round');
+      }
     }
   };
 
@@ -124,13 +137,22 @@ const FeedingRoundList: React.FC = () => {
                             </button>
                           )}
                           {round.status !== 'COMPLETED' && (
-                            <button
-                              className="text-emerald-600 hover:text-emerald-900"
-                              onClick={() => handleEdit(round)}
-                              title="Edit Round"
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </button>
+                            <>
+                              <button
+                                className="text-emerald-600 hover:text-emerald-900"
+                                onClick={() => handleEdit(round)}
+                                title="Edit Round"
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </button>
+                              <button
+                                className="text-red-600 hover:text-red-900"
+                                onClick={() => handleDelete(round.id)}
+                                title="Delete Round"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </>
                           )}
                         </div>
                       </td>

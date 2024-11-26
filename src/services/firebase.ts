@@ -210,6 +210,44 @@ export const feedingRoundServices = {
       console.error('Error updating feeding round status:', error);
       throw error;
     }
+  },
+
+  delete: async (id: string) => {
+    try {
+      await runTransaction(db, async (transaction) => {
+        // First, get the feeding round to know the amount to refund
+        const roundRef = doc(db, FEEDING_ROUNDS, id);
+        const roundDoc = await transaction.get(roundRef);
+        
+        if (!roundDoc.exists()) {
+          throw new Error('Feeding round not found');
+        }
+
+        const roundData = roundDoc.data();
+        
+        // Get the feeding category to refund the amount
+        const categoryRef = doc(db, TREASURY, roundData.categoryId);
+        const categoryDoc = await transaction.get(categoryRef);
+        
+        if (!categoryDoc.exists()) {
+          throw new Error('Feeding category not found');
+        }
+
+        const currentBalance = categoryDoc.data().balance || 0;
+
+        // Delete the feeding round
+        transaction.delete(roundRef);
+
+        // Refund the amount to the treasury
+        transaction.update(categoryRef, {
+          balance: currentBalance + roundData.allocatedAmount,
+          updatedAt: Timestamp.now()
+        });
+      });
+    } catch (error) {
+      console.error('Error deleting feeding round:', error);
+      throw error;
+    }
   }
 };
 
