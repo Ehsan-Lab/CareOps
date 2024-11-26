@@ -1,0 +1,55 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isValidDonor() {
+      return request.resource.data.keys().hasAll(['name', 'contact']) &&
+             request.resource.data.name is string &&
+             request.resource.data.contact is string;
+    }
+
+    function isValidDonation() {
+      return request.resource.data.keys().hasAll(['donorId', 'amount', 'purpose', 'date', 'categoryId']) &&
+             request.resource.data.amount is number &&
+             request.resource.data.amount > 0;
+    }
+
+    function isValidTreasuryCategory() {
+      return request.resource.data.keys().hasAll(['name', 'balance']) &&
+             request.resource.data.name is string &&
+             request.resource.data.balance is number;
+    }
+
+    // Default rule - deny all
+    match /{document=**} {
+      allow read, write: if true;
+    }
+
+    // Collection specific rules
+    match /donors/{donorId} {
+      allow read: if true;
+      allow create: if isValidDonor();
+      allow update: if isValidDonor();
+      allow delete: if true;
+    }
+
+    match /donations/{donationId} {
+      allow read: if true;
+      allow create: if isValidDonation();
+      allow update: if false; // Donations should not be updated
+      allow delete: if false; // Donations should not be deleted
+    }
+
+    match /feedingRounds/{roundId} {
+      allow read: if true;
+      allow create: if request.resource.data.keys().hasAll(['date', 'allocatedAmount', 'defaultAmount', 'categoryId', 'status']);
+      allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']);
+    }
+
+    match /treasury/{categoryId} {
+      allow read: if true;
+      allow create: if isValidTreasuryCategory();
+      allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly(['balance']);
+    }
+  }
+}
