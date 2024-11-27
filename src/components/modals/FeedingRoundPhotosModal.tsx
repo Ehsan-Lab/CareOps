@@ -1,7 +1,7 @@
 import React from 'react';
 import { X, Link as LinkIcon, ExternalLink, Trash2 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
-import { feedingRoundServices } from '../../services/firebase';
+import { feedingRoundServices } from '../../services/firebase/feedingRoundService';
 import { FeedingRound } from '../../types';
 import { format } from 'date-fns';
 

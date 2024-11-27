@@ -1,7 +1,7 @@
 import React from 'react';
 import { useForm } from 'react-hook-form';
 import { X } from 'lucide-react';
-import { feedingRoundServices } from '../../services/firebase';
+import { feedingRoundServices } from '../../services/firebase/feedingRoundService';
 import { useQueryClient } from '@tanstack/react-query';
 import { useStore } from '../../store';
 import { FeedingRound } from '../../types';

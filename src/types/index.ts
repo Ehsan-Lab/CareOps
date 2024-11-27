@@ -43,3 +43,21 @@ export interface Beneficiary {
   createdAt?: any;
   updatedAt?: any;
 }
+
+export type PaymentType = 'ONE_TIME' | 'SEASONAL' | 'RECURRING';
+export type PaymentStatus = 'PENDING' | 'COMPLETED' | 'CANCELLED';
+
+export interface Payment {
+  id: string;
+  beneficiaryId: string;
+  treasuryId: string;
+  categoryId: string;
+  amount: number;
+  date: string;
+  paymentType: PaymentType;
+  representativeId: string;
+  notes?: string;
+  status: PaymentStatus;
+  createdAt?: any;
+  updatedAt?: any;
+}
