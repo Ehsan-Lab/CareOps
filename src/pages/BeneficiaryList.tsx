@@ -29,6 +29,11 @@ const BeneficiaryList: React.FC = () => {
     }
   };
 
+  const handleAddNew = () => {
+    setSelectedBeneficiary(null);
+    setIsModalOpen(true);
+  };
+
   const getSupportTypeColor = (type: string) => {
     switch (type) {
       case 'MEDICAL':
@@ -63,10 +68,7 @@ const BeneficiaryList: React.FC = () => {
         <div className="mt-4 sm:ml-16 sm:mt-0 sm:flex-none">
           <button
             type="button"
-            onClick={() => {
-              setSelectedBeneficiary(null);
-              setIsModalOpen(true);
-            }}
+            onClick={handleAddNew}
             className="flex items-center gap-1 rounded-md bg-emerald-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-500"
           >
             <Plus className="h-4 w-4" />
@@ -151,6 +153,7 @@ const BeneficiaryList: React.FC = () => {
         onClose={() => {
           setIsModalOpen(false);
           setSelectedBeneficiary(null);
+          queryClient.invalidateQueries({ queryKey: ['beneficiaries'] });
         }}
         beneficiary={selectedBeneficiary}
       />

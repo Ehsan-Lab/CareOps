@@ -1,6 +1,6 @@
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { donorServices, donationServices, feedingRoundServices, treasuryServices } from '../services/firebase';
+import { donorServices, donationServices, feedingRoundServices, treasuryServices, beneficiaryServices } from '../services/firebase';
 import { useStore } from '../store';
 
 interface TreasuryCategory {
@@ -12,7 +12,13 @@ interface TreasuryCategory {
 }
 
 export const useFirebaseQuery = () => {
-  const { setDonors, setDonations, setFeedingRounds, setTreasuryCategories } = useStore();
+  const { 
+    setDonors, 
+    setDonations, 
+    setFeedingRounds, 
+    setTreasuryCategories,
+    setBeneficiaries 
+  } = useStore();
 
   const { 
     isLoading: isLoadingDonors,
@@ -71,6 +77,20 @@ export const useFirebaseQuery = () => {
     }
   });
 
+  const { 
+    isLoading: isLoadingBeneficiaries,
+    data: beneficiaries = []
+  } = useQuery({
+    queryKey: ['beneficiaries'],
+    queryFn: async () => {
+      const data = await beneficiaryServices.getAll();
+      return data;
+    },
+    onSuccess: (data) => {
+      setBeneficiaries(data);
+    }
+  });
+
   React.useEffect(() => {
     if (treasuryCategories) {
       setTreasuryCategories(treasuryCategories);
@@ -78,11 +98,13 @@ export const useFirebaseQuery = () => {
   }, [treasuryCategories, setTreasuryCategories]);
 
   return {
-    isLoading: isLoadingDonors || isLoadingDonations || isLoadingFeedingRounds || isLoadingTreasury,
+    isLoading: isLoadingDonors || isLoadingDonations || isLoadingFeedingRounds || 
+               isLoadingTreasury || isLoadingBeneficiaries,
     donors,
     donorsError,
     treasuryCategories,
     donations,
-    feedingRounds
+    feedingRounds,
+    beneficiaries
   };
 };
