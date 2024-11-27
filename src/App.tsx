@@ -8,6 +8,7 @@ import FeedingRoundList from './pages/FeedingRoundList';
 import TreasuryList from './pages/TreasuryList';
 import TreasuryCategories from './pages/TreasuryCategories';
 import BeneficiaryList from './pages/BeneficiaryList';
+import PaymentList from './pages/PaymentList';
 import { useFirebaseQuery } from './hooks/useFirebaseQuery';
 
 const queryClient = new QueryClient({
@@ -40,6 +41,7 @@ function AppContent() {
         <Route path="treasury" element={<TreasuryList />} />
         <Route path="treasury-categories" element={<TreasuryCategories />} />
         <Route path="beneficiaries" element={<BeneficiaryList />} />
+        <Route path="payments" element={<PaymentList />} />
       </Route>
     </Routes>
   );

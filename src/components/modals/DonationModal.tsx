@@ -1,7 +1,7 @@
 import React from 'react';
 import { useForm } from 'react-hook-form';
 import { X } from 'lucide-react';
-import { donationServices } from '../../services/firebase';
+import { donationServices } from '../../services/firebase/donationService';
 import { useQueryClient } from '@tanstack/react-query';
 import { useStore } from '../../store';
 import { useFirebaseQuery } from '../../hooks/useFirebaseQuery';

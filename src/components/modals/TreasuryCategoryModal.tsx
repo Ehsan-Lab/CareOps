@@ -1,7 +1,7 @@
 import React from 'react';
 import { useForm } from 'react-hook-form';
 import { X } from 'lucide-react';
-import { treasuryServices } from '../../services/firebase';
+import { treasuryServices } from '../../services/firebase/treasuryService';
 import { useQueryClient } from '@tanstack/react-query';
 
 interface TreasuryCategoryModalProps {

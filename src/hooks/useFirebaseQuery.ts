@@ -1,6 +1,6 @@
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { donorServices, donationServices, feedingRoundServices, treasuryServices, beneficiaryServices } from '../services/firebase';
+import { donorServices, donationServices, feedingRoundServices, treasuryServices, beneficiaryServices, paymentServices } from '../services/firebase';
 import { useStore } from '../store';
 
 interface TreasuryCategory {
@@ -17,7 +17,8 @@ export const useFirebaseQuery = () => {
     setDonations, 
     setFeedingRounds, 
     setTreasuryCategories,
-    setBeneficiaries 
+    setBeneficiaries,
+    setPayments 
   } = useStore();
 
   const { 
@@ -84,10 +85,23 @@ export const useFirebaseQuery = () => {
     queryKey: ['beneficiaries'],
     queryFn: async () => {
       const data = await beneficiaryServices.getAll();
+      console.log('Beneficiaries fetched in query:', data);
       return data;
     },
     onSuccess: (data) => {
+      console.log('Setting beneficiaries in store:', data);
       setBeneficiaries(data);
+    }
+  });
+
+  const { 
+    isLoading: isLoadingPayments,
+    data: payments = []
+  } = useQuery({
+    queryKey: ['payments'],
+    queryFn: paymentServices.getAll,
+    onSuccess: (data) => {
+      setPayments(data);
     }
   });
 
@@ -97,14 +111,19 @@ export const useFirebaseQuery = () => {
     }
   }, [treasuryCategories, setTreasuryCategories]);
 
+  React.useEffect(() => {
+    console.log('Beneficiaries in useFirebaseQuery:', beneficiaries);
+  }, [beneficiaries]);
+
   return {
     isLoading: isLoadingDonors || isLoadingDonations || isLoadingFeedingRounds || 
-               isLoadingTreasury || isLoadingBeneficiaries,
+               isLoadingTreasury || isLoadingBeneficiaries || isLoadingPayments,
     donors,
     donorsError,
     treasuryCategories,
     donations,
     feedingRounds,
-    beneficiaries
+    beneficiaries,
+    payments
   };
 };
