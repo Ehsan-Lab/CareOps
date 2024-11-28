@@ -1,0 +1,181 @@
+<CharityManagementSystem>
+    <Modules>
+        <DonorManagement>
+            <Description>Manage donor profiles with full CRUD operations.</Description>
+            <Fields>
+                <Field name="DonorID" type="integer" description="Unique identifier for each donor." />
+                <Field name="Name" type="string" description="Full name of the donor." />
+                <Field name="Contact" type="string" description="Contact details of the donor." />
+            </Fields>
+            <Operations>
+                <Operation>CreateDonor</Operation>
+                <Operation>ReadDonor</Operation>
+                <Operation>UpdateDonor</Operation>
+                <Operation>DeleteDonor</Operation>
+            </Operations>
+        </DonorManagement>
+        <DonationManagement>
+            <Description>
+                Manage individual donations, linking to donors and treasury categories.
+            </Description>
+            <Fields>
+                <Field name="DonationID" type="integer" description="Unique identifier for each donation." />
+                <Field name="DonorID" type="integer" description="Links to DonorManagement.DonorID." />
+                <Field name="Amount" type="float" description="Amount donated." />
+                <Field name="Purpose" type="string" description="Purpose of the donation (e.g., Feeding, General)." />
+                <Field name="Date" type="date" description="Date of the donation." />
+                <Field name="CategoryID" type="integer" description="Links to TreasuryManagement.CategoryID." />
+            </Fields>
+            <Operations>
+                <Operation>AddDonation</Operation>
+                <Operation>ViewDonations</Operation>
+                <Operation>UpdateDonation</Operation>
+            </Operations>
+            <Relationships>
+                <RelatedModule module="DonorManagement" relation="Links donations to donor profiles using DonorID." />
+                <RelatedModule module="TreasuryManagement" relation="Adds donation amounts to the appropriate category in the treasury using CategoryID." />
+            </Relationships>
+        </DonationManagement>
+        <FeedingGroundManagement>
+            <Description>
+                Manage feeding rounds, deducting funds from the treasury for specific operations.
+            </Description>
+            <Fields>
+                <Field name="FeedingRoundID" type="integer" description="Unique identifier for the feeding round." />
+                <Field name="Date" type="date" description="Date of the feeding round." />
+                <Field name="AllocatedAmount" type="float" description="Amount allocated to the feeding round." />
+                <Field name="DefaultAmount" type="float" description="Default minimum cost for each feeding round." />
+                <Field name="CategoryID" type="integer" description="Links to TreasuryManagement.CategoryID to allocate funds." />
+                <Field name="Status" type="string" description="Current status of the feeding round." />
+            </Fields>
+            <Operations>
+                <Operation>CreateFeedingRound</Operation>
+                <Operation>UpdateFeedingRound</Operation>
+            </Operations>
+            <Relationships>
+                <RelatedModule module="TreasuryManagement" relation="Deducts funds from the treasury for feeding rounds using CategoryID." />
+            </Relationships>
+        </FeedingGroundManagement>
+        <TreasuryManagement>
+            <Description>
+                Manage the central treasury for categorized funds, ensuring proper deposits and withdrawals.
+            </Description>
+            <Fields>
+                <Field name="TreasuryID" type="integer" description="Unique identifier for each treasury or category." />
+                <Field name="CategoryName" type="string" description="Name of the category (e.g., Feeding, General, Medical Aid)." />
+                <Field name="Balance" type="float" description="Current balance for the category." />
+            </Fields>
+            <Operations>
+                <Operation>DepositFunds</Operation>
+                <Operation>WithdrawFunds</Operation>
+                <Operation>CheckBalance</Operation>
+                <Operation>AddCategory</Operation>
+            </Operations>
+            <Relationships>
+                <RelatedModule module="DonationManagement" relation="Receives funds for specific categories based on donations." />
+                <RelatedModule module="FeedingGroundManagement" relation="Provides funds for feeding rounds, ensuring sufficient balances exist." />
+                <RelatedModule module="PaymentsManagement" relation="Tracks payments deducted from specific categories." />
+            </Relationships>
+        </TreasuryManagement>
+        <PaymentsManagement>
+            <Description>
+                Manage payments made to payees (beneficiaries), including tracking treasury balances, categories, and representatives. Provides a detailed modal for adding payments with validation and interactive fields.
+            </Description>
+            <Fields>
+                <Field name="PaymentID" type="integer" description="Unique identifier for each payment." />
+                <Field name="PayeeID" type="integer" description="Links to PayeeManagement.PayeeID, selected via autocomplete dropdown." />
+                <Field name="TreasuryID" type="integer" description="Links to TreasuryManagement.CategoryID, selected via autocomplete dropdown." />
+                <Field name="CategoryID" type="integer" description="Links to TreasuryManagement.CategoryID for payment purpose, selected via autocomplete dropdown." />
+                <Field name="Amount" type="float" description="Amount paid to the payee, deducted from treasury if balance exists." />
+                <Field name="Date" type="date" description="Date the payment was made." />
+                <Field name="PaymentType" type="string" description="Type of payment (e.g., One-time, Seasonal, Recurring)." />
+                <Field name="RepresentativeID" type="integer" description="Links to RepresentativesManagement.RepresentativeID, selected via autocomplete dropdown." />
+                <Field name="Notes" type="string" description="Optional notes about the payment for further details." />
+            </Fields>
+            <Modal>
+                <Title>Add Payment</Title>
+                <Fields>
+                    <Field name="Treasury" type="dropdown-autocomplete" description="Points to TreasuryManagement.TreasuryID, representing the treasury to be used." />
+                    <Field name="Payee Name" type="dropdown-autocomplete" description="Links to PayeeManagement.PayeeID, allowing the user to select the beneficiary." />
+                    <Field name="Category" type="dropdown-autocomplete" description="Links to TreasuryManagement.CategoryID for the payment purpose." />
+                    <Field name="Amount" type="input" description="Amount to be deducted from the selected treasury." />
+                    <Field name="Payment Type" type="dropdown" description="Type of payment (e.g., One-time, Seasonal, Recurring)." />
+                    <Field name="Representative" type="dropdown-autocomplete" description="Links to RepresentativesManagement.RepresentativeID, selecting the representative handling the payment." />
+                    <Field name="Notes" type="textarea" description="Optional field to add any details about the payment." />
+                </Fields>
+                <ValidationRules>
+                    <Rule description="Ensure the selected treasury has sufficient balance for the entered amount." />
+                    <Rule description="Warn the user if the balance in the treasury is insufficient, and prevent payment creation." />
+                    <Rule description="Require all mandatory fields (Treasury, Payee Name, Category, Amount, Date, Payment Type)." />
+                    <Rule description="Validate the linkage of Treasury, Payee, and Category before saving the payment." />
+                </ValidationRules>
+                <Actions>
+                    <Action name="Submit" description="Save the payment if all validation rules are met." />
+                    <Action name="Cancel" description="Close the modal without saving." />
+                </Actions>
+            </Modal>
+            <Operations>
+                <Operation>AddPayment description="Allows users to create a new payment using the modal." />
+                <Operation>ViewPayments description="Lists all payments made, with filtering and sorting options." />
+                <Operation>UpdatePayment description="Edit an existing payment to correct errors or add details." />
+            </Operations>
+            <Relationships>
+                <RelatedModule module="PayeeManagement" relation="Links payments to specific payees for tracking." />
+                <RelatedModule module="TreasuryManagement" relation="Deducts payment amounts from specific categories and validates treasury balance." />
+                <RelatedModule module="RepresentativesManagement" relation="Tracks representatives responsible for handling payments." />
+            </Relationships>
+            <ValidationRules>
+                <Rule name="TreasuryBalanceCheck" description="Check if sufficient balance exists in the treasury for the selected category before allowing payment." />
+                <Rule name="RequiredFields" description="Ensure all required fields are filled in the payment modal." />
+                <Rule name="AmountValidation" description="Amount must be a positive number greater than zero." />
+            </ValidationRules>
+        </PaymentsManagement>
+        <PayeeManagement>
+            <Description>
+                Manage a structured list of payees (beneficiaries) to track their details and payments.
+            </Description>
+            <Fields>
+                <Field name="PayeeID" type="integer" description="Unique identifier for each payee." />
+                <Field name="Name" type="string" description="Full name of the payee." />
+                <Field name="Contact" type="string" description="Contact details of the payee." />
+                <Field name="CategoryID" type="integer" description="Links to TreasuryManagement.CategoryID for category-specific payees." />
+            </Fields>
+            <Operations>
+                <Operation>AddPayee</Operation>
+                <Operation>ViewPayees</Operation>
+                <Operation>UpdatePayee</Operation>
+                <Operation>DeletePayee</Operation>
+            </Operations>
+            <Relationships>
+                <RelatedModule module="PaymentsManagement" relation="Links payees to payments made to them." />
+                <RelatedModule module="TreasuryManagement" relation="Categorizes payees based on purpose (e.g., Feeding, Medical Aid)." />
+            </Relationships>
+        </PayeeManagement>
+        <RepresentativesManagement>
+            <Description>
+                Manage representatives who handle payments to beneficiaries.
+            </Description>
+            <Fields>
+                <Field name="RepresentativeID" type="integer" description="Unique identifier for each representative." />
+                <Field name="Name" type="string" description="Full name of the representative." />
+                <Field name="Contact" type="string" description="Contact details of the representative." />
+            </Fields>
+            <Operations>
+                <Operation>AddRepresentative</Operation>
+                <Operation>ViewRepresentatives</Operation>
+                <Operation>UpdateRepresentative</Operation>
+                <Operation>DeleteRepresentative</Operation>
+            </Operations>
+        </RepresentativesManagement>
+    </Modules>
+    <SystemRequirements>
+        <Requirement name="FundTracking" description="Track available funds across categorized purposes dynamically." />
+        <Requirement name="Validation" description="Validate fund sufficiency before withdrawals or allocations." />
+        <Requirement name="DynamicCategories" description="Support creation of new fund categories if needed." />
+        <Requirement name="DataConsistency" description="Ensure seamless interaction between modules for data integrity." />
+        <Requirement name="PaymentTracking" description="Track all payments made to beneficiaries, including relevant details and categories." />
+        <Requirement name="RepresentativeTracking" description="Ensure representatives involved in payments are properly tracked for future reference." />
+        <Requirement name="PayeeTracking" description="Maintain a structured list of payees and their associated details." />
+        <Requirement name="ModuleLinking" description="Explicitly link modules to show relationships between data and operations." />
+    </SystemRequirements>
+</CharityManagementSystem>
