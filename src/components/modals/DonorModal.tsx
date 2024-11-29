@@ -4,7 +4,6 @@ import { X } from 'lucide-react';
 import { donorServices } from '../../services/firebase/donorService';
 import { useQueryClient } from '@tanstack/react-query';
 import { Donor } from '../../types/donor';
-import { validateFirebaseConnection } from '../../config/firebase';
 
 interface DonorModalProps {
   isOpen: boolean;
@@ -33,11 +32,6 @@ export const DonorModal: React.FC<DonorModalProps> = ({ isOpen, onClose, donor }
 
   const onSubmit = async (data: DonorFormData) => {
     try {
-      const isConnected = await validateFirebaseConnection();
-      if (!isConnected) {
-        throw new Error('Firebase connection failed');
-      }
-
       if (donor?.id) {
         console.log('Updating donor:', donor.id, data);
         await donorServices.update(donor.id, data);
