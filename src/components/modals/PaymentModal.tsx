@@ -27,9 +27,9 @@ interface PaymentFormData {
 
 export function PaymentModal({ isOpen, onClose, payment, beneficiaryId }: PaymentModalProps) {
   const queryClient = useQueryClient();
-  const { treasuryCategories, beneficiaries } = useStore();
+  const { treasuryCategories, beneficiaries, setPayments, payments } = useStore();
 
-  const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm<PaymentFormData>({
+  const { register, handleSubmit, watch, setValue, reset, formState: { errors } } = useForm<PaymentFormData>({
     defaultValues: payment ? {
       beneficiaryId: payment.beneficiaryId,
       amount: String(payment.amount),
@@ -48,6 +48,30 @@ export function PaymentModal({ isOpen, onClose, payment, beneficiaryId }: Paymen
       description: ''
     }
   });
+
+  React.useEffect(() => {
+    if (payment) {
+      reset({
+        beneficiaryId: payment.beneficiaryId,
+        amount: String(payment.amount),
+        categoryId: payment.categoryId,
+        date: payment.date,
+        paymentType: payment.paymentType,
+        notes: payment.notes || '',
+        description: payment.notes || ''
+      });
+    } else {
+      reset({
+        beneficiaryId: beneficiaryId || '',
+        amount: '',
+        categoryId: '',
+        date: new Date().toISOString().split('T')[0],
+        paymentType: 'ONE_TIME',
+        notes: '',
+        description: ''
+      });
+    }
+  }, [payment, beneficiaryId, reset]);
 
   const paymentType = watch('paymentType');
   const activeBeneficiaries = beneficiaries.filter(b => b.status === 'ACTIVE');
@@ -69,13 +93,21 @@ export function PaymentModal({ isOpen, onClose, payment, beneficiaryId }: Paymen
       };
 
       if (payment?.id) {
-        await paymentServices.update(payment.id, paymentData);
+        const updatedPayment = await paymentServices.update(payment.id.toString(), paymentData) as Payment;
+        setPayments(
+          payments.map(p => 
+            p.id === payment.id ? { ...p, ...updatedPayment } : p
+          )
+        );
       } else {
-        await paymentServices.create(paymentData);
+        const newPayment = await paymentServices.create(paymentData) as Payment;
+        if (newPayment) {
+          setPayments([...payments, newPayment]);
+        }
       }
       
-      queryClient.invalidateQueries({ queryKey: ['payments'] });
-      queryClient.invalidateQueries({ queryKey: ['treasury'] });
+      queryClient.invalidateQueries({ queryKey: ['all-data'] });
+      reset();
       onClose();
     } catch (error) {
       console.error('Error saving payment:', error);

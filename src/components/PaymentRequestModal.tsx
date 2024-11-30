@@ -4,7 +4,7 @@ import { X, Calendar, DollarSign, FileText, Clock } from 'lucide-react';
 import { paymentRequestServices } from '../services/firebase/paymentRequestService';
 import { useQueryClient } from '@tanstack/react-query';
 import { useStore } from '../store';
-import { PaymentRequest, PaymentRequestFormData } from '../types/paymentRequest';
+import { PaymentRequest, PaymentRequestFormData, PaymentRequestStatus } from '../types/paymentRequest';
 import { BeneficiaryCombobox } from './BeneficiaryCombobox';
 
 interface PaymentRequestModalProps {
@@ -21,11 +21,11 @@ export function PaymentRequestModal({
   beneficiaryId
 }: PaymentRequestModalProps) {
   const queryClient = useQueryClient();
-  const { treasuryCategories, beneficiaries } = useStore();
+  const { treasuryCategories, beneficiaries, setPaymentRequests, paymentRequests } = useStore();
   const activeBeneficiaries = beneficiaries.filter(b => b.status === 'ACTIVE');
   const availableCategories = treasuryCategories.filter(c => c.balance > 0);
 
-  const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm<PaymentRequestFormData>({
+  const { register, handleSubmit, watch, setValue, reset, formState: { errors } } = useForm<PaymentRequestFormData>({
     defaultValues: request ? {
       beneficiaryId: request.beneficiaryId,
       treasuryId: request.treasuryId,
@@ -47,6 +47,32 @@ export function PaymentRequestModal({
     }
   });
 
+  React.useEffect(() => {
+    if (request) {
+      reset({
+        beneficiaryId: request.beneficiaryId,
+        treasuryId: request.treasuryId,
+        amount: request.amount,
+        paymentType: request.paymentType,
+        startDate: request.startDate,
+        endDate: request.endDate,
+        notes: request.notes,
+        frequency: request.frequency,
+        description: request.description
+      });
+    } else {
+      reset({
+        beneficiaryId: beneficiaryId || '',
+        treasuryId: '',
+        amount: 0,
+        paymentType: 'ONE_TIME',
+        startDate: new Date().toISOString().split('T')[0],
+        notes: '',
+        description: ''
+      });
+    }
+  }, [request, beneficiaryId, reset]);
+
   const paymentType = watch('paymentType');
 
   const onSubmit = async (data: PaymentRequestFormData) => {
@@ -58,16 +84,28 @@ export function PaymentRequestModal({
 
       const requestData = {
         ...data,
-        beneficiaryId: beneficiaryId || data.beneficiaryId
+        beneficiaryId: beneficiaryId || data.beneficiaryId,
+        status: 'CREATED' as PaymentRequestStatus
       };
 
       if (request?.id) {
-        await paymentRequestServices.update(request.id, requestData);
+        const updatedRequest = await paymentRequestServices.update(request.id, requestData);
+        // Update store with the returned request
+        setPaymentRequests(
+          paymentRequests.map(pr => 
+            pr.id === request.id ? updatedRequest : pr
+          )
+        );
       } else {
-        await paymentRequestServices.create(requestData);
+        const newRequest = await paymentRequestServices.create(requestData);
+        // Add the new request to store
+        setPaymentRequests([...paymentRequests, newRequest]);
       }
       
-      queryClient.invalidateQueries({ queryKey: ['paymentRequests'] });
+      // Invalidate queries to ensure consistency
+      queryClient.invalidateQueries({ queryKey: ['all-data'] });
+      
+      reset();
       onClose();
     } catch (error) {
       console.error('Error saving payment request:', error);

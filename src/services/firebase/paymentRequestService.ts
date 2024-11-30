@@ -7,7 +7,8 @@ import {
   runTransaction,
   query,
   where,
-  orderBy
+  orderBy,
+  getDoc
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { PaymentRequest, PaymentRequestStatus } from '../../types/paymentRequest';
@@ -35,8 +36,10 @@ export const paymentRequestServices = {
     }
   },
 
-  create: async (data: Omit<PaymentRequest, 'id' | 'status' | 'createdAt' | 'updatedAt'>) => {
+  create: async (data: Omit<PaymentRequest, 'id' | 'status' | 'createdAt' | 'updatedAt'>): Promise<PaymentRequest> => {
     try {
+      let createdRequestId: string;
+
       await runTransaction(db, async (transaction) => {
         // Validate treasury balance
         const categoryRef = doc(db, COLLECTIONS.TREASURY, data.treasuryId);
@@ -48,13 +51,29 @@ export const paymentRequestServices = {
 
         // Create payment request
         const requestRef = doc(collection(db, PAYMENT_REQUESTS));
-        transaction.set(requestRef, {
+        createdRequestId = requestRef.id;
+
+        const requestData = {
           ...data,
-          status: 'CREATED',
+          id: createdRequestId,
+          status: 'CREATED' as PaymentRequestStatus,
           createdAt: Timestamp.now(),
           updatedAt: Timestamp.now()
-        });
+        };
+
+        transaction.set(requestRef, requestData);
       });
+
+      // Fetch and return the created request
+      const requestDoc = await getDoc(doc(db, PAYMENT_REQUESTS, createdRequestId!));
+      if (!requestDoc.exists()) {
+        throw new Error('Failed to fetch created request');
+      }
+
+      return {
+        id: requestDoc.id,
+        ...requestDoc.data()
+      } as PaymentRequest;
     } catch (error) {
       console.error('Error creating payment request:', error);
       throw error;
@@ -133,13 +152,26 @@ export const paymentRequestServices = {
     }
   },
 
-  update: async (id: string, data: Partial<PaymentRequest>) => {
+  update: async (id: string, data: Partial<PaymentRequest>): Promise<PaymentRequest> => {
     try {
       const docRef = doc(db, PAYMENT_REQUESTS, id);
-      await updateDoc(docRef, {
+      const updateData = {
         ...data,
         updatedAt: Timestamp.now()
-      });
+      };
+      
+      await updateDoc(docRef, updateData);
+
+      // Fetch and return the updated request
+      const updatedDoc = await getDoc(docRef);
+      if (!updatedDoc.exists()) {
+        throw new Error('Failed to fetch updated request');
+      }
+
+      return {
+        id: updatedDoc.id,
+        ...updatedDoc.data()
+      } as PaymentRequest;
     } catch (error) {
       console.error('Error updating payment request:', error);
       throw error;
