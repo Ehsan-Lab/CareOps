@@ -20,6 +20,10 @@ export interface FeedingRound {
   allocatedAmount: number;
   categoryId: string;
   driveLink?: string;
+  description?: string;
+  unitPrice: number;
+  observations?: string;
+  specialCircumstances?: string;
   createdAt?: any;
   updatedAt?: any;
 }

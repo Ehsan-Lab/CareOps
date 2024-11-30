@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
-import { Heart, Users, Wallet, Utensils, Menu, CircleDollarSign, UserRound, CreditCard } from 'lucide-react';
+import { Heart, Users, Wallet, Utensils, Menu, CircleDollarSign, UserRound, CreditCard, FileText } from 'lucide-react';
 
 const Layout: React.FC = () => {
   const location = useLocation();
@@ -14,6 +14,7 @@ const Layout: React.FC = () => {
     { name: 'Treasury Categories', href: '/treasury-categories', icon: CircleDollarSign },
     { name: 'Beneficiaries', href: '/beneficiaries', icon: UserRound },
     { name: 'Payments', href: '/payments', icon: CreditCard },
+    { name: 'Payment Requests', href: '/payment-requests', icon: FileText },
   ];
 
   const isActive = (path: string) => location.pathname === path;

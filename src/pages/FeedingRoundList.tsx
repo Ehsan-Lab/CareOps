@@ -1,5 +1,5 @@
-import React from 'react';
-import { Utensils, Plus, Play, CheckCircle, Pencil, Trash2, Camera, ImageOff } from 'lucide-react';
+import React, { useState } from 'react';
+import { Utensils, Plus, Play, CheckCircle, Pencil, Trash2, Camera, ImageOff, ChevronDown, ChevronUp } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useFirebaseQuery } from '../hooks/useFirebaseQuery';
 import { FeedingRoundModal } from '../components/modals/FeedingRoundModal';
@@ -13,6 +13,9 @@ const FeedingRoundList: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = React.useState(false);
   const [isPhotosModalOpen, setIsPhotosModalOpen] = React.useState(false);
   const [selectedRound, setSelectedRound] = React.useState<FeedingRound | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [sortField, setSortField] = useState<'date' | 'allocatedAmount' | 'unitPrice' | 'units'>('date');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const queryClient = useQueryClient();
 
   const handleEdit = (round: FeedingRound) => {
@@ -48,6 +51,38 @@ const FeedingRoundList: React.FC = () => {
     setIsPhotosModalOpen(true);
   };
 
+  const handleSort = (field: typeof sortField) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  const sortedRounds = React.useMemo(() => {
+    return [...feedingRounds].sort((a, b) => {
+      let comparison = 0;
+      switch (sortField) {
+        case 'date':
+          comparison = new Date(a.date).getTime() - new Date(b.date).getTime();
+          break;
+        case 'allocatedAmount':
+          comparison = a.allocatedAmount - b.allocatedAmount;
+          break;
+        case 'unitPrice':
+          comparison = (a.unitPrice || 0) - (b.unitPrice || 0);
+          break;
+        case 'units':
+          const unitsA = a.unitPrice ? a.allocatedAmount / a.unitPrice : 0;
+          const unitsB = b.unitPrice ? b.allocatedAmount / b.unitPrice : 0;
+          comparison = unitsA - unitsB;
+          break;
+      }
+      return sortDirection === 'asc' ? comparison : -comparison;
+    });
+  }, [feedingRounds, sortField, sortDirection]);
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'PENDING':
@@ -59,6 +94,11 @@ const FeedingRoundList: React.FC = () => {
       default:
         return 'bg-gray-100 text-gray-800';
     }
+  };
+
+  const SortIcon = ({ field }: { field: typeof sortField }) => {
+    if (sortField !== field) return null;
+    return sortDirection === 'asc' ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />;
   };
 
   return (
@@ -95,11 +135,41 @@ const FeedingRoundList: React.FC = () => {
               <table className="min-w-full divide-y divide-gray-300">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6">
-                      Date
+                    <th 
+                      className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6 cursor-pointer"
+                      onClick={() => handleSort('date')}
+                    >
+                      <div className="flex items-center gap-1">
+                        Date
+                        <SortIcon field="date" />
+                      </div>
                     </th>
-                    <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
-                      Amount
+                    <th 
+                      className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 cursor-pointer"
+                      onClick={() => handleSort('allocatedAmount')}
+                    >
+                      <div className="flex items-center gap-1">
+                        Amount
+                        <SortIcon field="allocatedAmount" />
+                      </div>
+                    </th>
+                    <th 
+                      className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 cursor-pointer"
+                      onClick={() => handleSort('unitPrice')}
+                    >
+                      <div className="flex items-center gap-1">
+                        Unit Price
+                        <SortIcon field="unitPrice" />
+                      </div>
+                    </th>
+                    <th 
+                      className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 cursor-pointer"
+                      onClick={() => handleSort('units')}
+                    >
+                      <div className="flex items-center gap-1">
+                        Units
+                        <SortIcon field="units" />
+                      </div>
                     </th>
                     <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                       Status
@@ -110,74 +180,121 @@ const FeedingRoundList: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 bg-white">
-                  {feedingRounds.map((round) => (
-                    <tr key={round.id}>
-                      <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-6">
-                        {format(new Date(round.date), 'MMM d, yyyy')}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                        ${round.allocatedAmount.toFixed(2)}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                        <span className={`inline-flex rounded-full px-2 text-xs font-semibold leading-5 ${getStatusColor(round.status)}`}>
-                          {round.status}
-                        </span>
-                      </td>
-                      <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
-                        <div className="flex justify-end gap-2">
-                          {round.status === 'PENDING' && (
-                            <button
-                              className="text-blue-600 hover:text-blue-900"
-                              onClick={() => handleStatusUpdate(round.id, 'IN_PROGRESS')}
-                              title="Start Round"
-                            >
-                              <Play className="h-4 w-4" />
-                            </button>
-                          )}
-                          {round.status === 'IN_PROGRESS' && (
-                            <button
-                              className="text-green-600 hover:text-green-900"
-                              onClick={() => handleStatusUpdate(round.id, 'COMPLETED')}
-                              title="Complete Round"
-                            >
-                              <CheckCircle className="h-4 w-4" />
-                            </button>
-                          )}
-                          {round.status !== 'COMPLETED' && (
-                            <>
+                  {sortedRounds.map((round) => {
+                    const units = round.unitPrice ? round.allocatedAmount / round.unitPrice : 0;
+                    const isExpanded = expandedId === round.id;
+
+                    return (
+                      <React.Fragment key={round.id}>
+                        <tr className="hover:bg-gray-50">
+                          <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-6">
+                            {format(new Date(round.date), 'MMM d, yyyy')}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                            ${round.allocatedAmount.toFixed(2)}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                            ${round.unitPrice?.toFixed(2) || 'N/A'}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                            {units.toFixed(2)}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                            <span className={`inline-flex rounded-full px-2 text-xs font-semibold leading-5 ${getStatusColor(round.status)}`}>
+                              {round.status}
+                            </span>
+                          </td>
+                          <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
+                            <div className="flex justify-end gap-2">
                               <button
-                                className="text-emerald-600 hover:text-emerald-900"
-                                onClick={() => handleEdit(round)}
-                                title="Edit Round"
+                                className="text-gray-600 hover:text-gray-900"
+                                onClick={() => setExpandedId(isExpanded ? null : round.id)}
+                                title={isExpanded ? "Hide Details" : "Show Details"}
                               >
-                                <Pencil className="h-4 w-4" />
+                                {isExpanded ? (
+                                  <ChevronUp className="h-4 w-4" />
+                                ) : (
+                                  <ChevronDown className="h-4 w-4" />
+                                )}
                               </button>
-                              <button
-                                className="text-red-600 hover:text-red-900"
-                                onClick={() => handleDelete(round.id)}
-                                title="Delete Round"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </button>
-                            </>
-                          )}
-                          {round.status === 'COMPLETED' && (
-                            <button
-                              className="text-purple-600 hover:text-purple-900"
-                              onClick={() => handleViewPhotos(round)}
-                              title={round.driveLink ? "View Photos" : "Add Photos"}
-                            >
-                              {round.driveLink ? (
-                                <Camera className="h-4 w-4" />
-                              ) : (
-                                <ImageOff className="h-4 w-4" />
+                              {round.status === 'PENDING' && (
+                                <button
+                                  className="text-blue-600 hover:text-blue-900"
+                                  onClick={() => handleStatusUpdate(round.id, 'IN_PROGRESS')}
+                                  title="Start Round"
+                                >
+                                  <Play className="h-4 w-4" />
+                                </button>
                               )}
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                              {round.status === 'IN_PROGRESS' && (
+                                <button
+                                  className="text-green-600 hover:text-green-900"
+                                  onClick={() => handleStatusUpdate(round.id, 'COMPLETED')}
+                                  title="Complete Round"
+                                >
+                                  <CheckCircle className="h-4 w-4" />
+                                </button>
+                              )}
+                              {round.status !== 'COMPLETED' && (
+                                <>
+                                  <button
+                                    className="text-emerald-600 hover:text-emerald-900"
+                                    onClick={() => handleEdit(round)}
+                                    title="Edit Round"
+                                  >
+                                    <Pencil className="h-4 w-4" />
+                                  </button>
+                                  <button
+                                    className="text-red-600 hover:text-red-900"
+                                    onClick={() => handleDelete(round.id)}
+                                    title="Delete Round"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </button>
+                                </>
+                              )}
+                              {round.status === 'COMPLETED' && (
+                                <button
+                                  className="text-purple-600 hover:text-purple-900"
+                                  onClick={() => handleViewPhotos(round)}
+                                  title={round.driveLink ? "View Photos" : "Add Photos"}
+                                >
+                                  {round.driveLink ? (
+                                    <Camera className="h-4 w-4" />
+                                  ) : (
+                                    <ImageOff className="h-4 w-4" />
+                                  )}
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                        {isExpanded && (
+                          <tr>
+                            <td colSpan={6} className="px-4 py-4 text-sm text-gray-500 bg-gray-50">
+                              <div className="space-y-2">
+                                {round.description && (
+                                  <div>
+                                    <span className="font-medium">Description:</span> {round.description}
+                                  </div>
+                                )}
+                                {round.observations && (
+                                  <div>
+                                    <span className="font-medium">Observations:</span> {round.observations}
+                                  </div>
+                                )}
+                                {round.specialCircumstances && (
+                                  <div>
+                                    <span className="font-medium">Special Circumstances:</span> {round.specialCircumstances}
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

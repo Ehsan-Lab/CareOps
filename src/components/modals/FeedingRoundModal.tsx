@@ -15,7 +15,11 @@ interface FeedingRoundModalProps {
 interface FeedingRoundFormData {
   date: string;
   allocatedAmount: string;
-  status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED';
+  unitPrice: string;
+  description: string;
+  observations: string;
+  specialCircumstances: string;
+  status?: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED';
 }
 
 export const FeedingRoundModal: React.FC<FeedingRoundModalProps> = ({ 
@@ -24,17 +28,25 @@ export const FeedingRoundModal: React.FC<FeedingRoundModalProps> = ({
   round 
 }) => {
   const queryClient = useQueryClient();
-  const categories = useStore((state) => state.treasuryCategories);
-  const feedingCategory = categories.find(c => c.name.toLowerCase() === 'feeding');
+  const { treasuryCategories, setFeedingRounds, feedingRounds } = useStore();
+  const feedingCategory = treasuryCategories.find(c => c.name.toLowerCase() === 'feeding');
   
-  const { register, handleSubmit, reset, formState: { errors } } = useForm<FeedingRoundFormData>({
+  const { register, handleSubmit, watch, reset, formState: { errors } } = useForm<FeedingRoundFormData>({
     defaultValues: round ? {
       date: round.date,
       allocatedAmount: round.allocatedAmount.toString(),
+      unitPrice: round.unitPrice?.toString() || '',
+      description: round.description || '',
+      observations: round.observations || '',
+      specialCircumstances: round.specialCircumstances || '',
       status: round.status
     } : {
       date: new Date().toISOString().split('T')[0],
       allocatedAmount: '',
+      unitPrice: '',
+      description: '',
+      observations: '',
+      specialCircumstances: '',
       status: 'PENDING'
     }
   });
@@ -44,16 +56,28 @@ export const FeedingRoundModal: React.FC<FeedingRoundModalProps> = ({
       reset({
         date: round.date,
         allocatedAmount: round.allocatedAmount.toString(),
+        unitPrice: round.unitPrice?.toString() || '',
+        description: round.description || '',
+        observations: round.observations || '',
+        specialCircumstances: round.specialCircumstances || '',
         status: round.status
       });
     } else {
       reset({
         date: new Date().toISOString().split('T')[0],
         allocatedAmount: '',
+        unitPrice: '',
+        description: '',
+        observations: '',
+        specialCircumstances: '',
         status: 'PENDING'
       });
     }
   }, [round, reset]);
+
+  const allocatedAmount = parseFloat(watch('allocatedAmount') || '0');
+  const unitPrice = parseFloat(watch('unitPrice') || '0');
+  const totalUnits = unitPrice > 0 ? allocatedAmount / unitPrice : 0;
 
   const onSubmit = async (data: FeedingRoundFormData) => {
     if (!feedingCategory) {
@@ -62,21 +86,32 @@ export const FeedingRoundModal: React.FC<FeedingRoundModalProps> = ({
     }
 
     try {
+      const formattedData = {
+        ...data,
+        allocatedAmount: parseFloat(data.allocatedAmount),
+        unitPrice: parseFloat(data.unitPrice),
+        description: data.description.trim(),
+        observations: data.observations.trim(),
+        specialCircumstances: data.specialCircumstances.trim()
+      };
+
       if (round?.id) {
-        await feedingRoundServices.update(round.id, {
-          ...data,
-          allocatedAmount: parseFloat(data.allocatedAmount)
-        });
+        const updatedRound = await feedingRoundServices.update(round.id, formattedData);
+        setFeedingRounds(
+          feedingRounds.map(r => 
+            r.id === round.id ? updatedRound : r
+          )
+        );
       } else {
-        await feedingRoundServices.create({
-          ...data,
-          allocatedAmount: parseFloat(data.allocatedAmount),
+        const newRound = await feedingRoundServices.create({
+          ...formattedData,
           status: 'PENDING',
           categoryId: feedingCategory.id
         });
+        setFeedingRounds([...feedingRounds, newRound]);
       }
-      queryClient.invalidateQueries({ queryKey: ['feedingRounds'] });
-      queryClient.invalidateQueries({ queryKey: ['treasury'] });
+      queryClient.invalidateQueries({ queryKey: ['all-data'] });
+      reset();
       onClose();
     } catch (error) {
       console.error('Error saving feeding round:', error);
@@ -91,7 +126,7 @@ export const FeedingRoundModal: React.FC<FeedingRoundModalProps> = ({
       <div className="flex min-h-screen items-center justify-center p-4">
         <div className="fixed inset-0 bg-black bg-opacity-25" onClick={onClose} />
         
-        <div className="relative w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+        <div className="relative w-full max-w-2xl rounded-lg bg-white p-6 shadow-xl">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-medium">
               {round ? 'Edit' : 'New'} Feeding Round
@@ -102,47 +137,105 @@ export const FeedingRoundModal: React.FC<FeedingRoundModalProps> = ({
           </div>
 
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Date</label>
-              <input
-                type="date"
-                {...register('date', { required: 'Date is required' })}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 sm:text-sm"
-              />
-              {errors.date && (
-                <p className="mt-1 text-sm text-red-600">{errors.date.message}</p>
-              )}
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Amount</label>
-              <input
-                type="number"
-                step="0.01"
-                {...register('allocatedAmount', { 
-                  required: 'Amount is required',
-                  min: { value: 0, message: 'Amount must be positive' }
-                })}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 sm:text-sm"
-              />
-              {errors.allocatedAmount && (
-                <p className="mt-1 text-sm text-red-600">{errors.allocatedAmount.message}</p>
-              )}
-            </div>
-
-            {round && (
+            <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700">Status</label>
-                <select
-                  {...register('status')}
+                <label className="block text-sm font-medium text-gray-700">Date</label>
+                <input
+                  type="date"
+                  {...register('date', { required: 'Date is required' })}
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 sm:text-sm"
-                >
-                  <option value="PENDING">Pending</option>
-                  <option value="IN_PROGRESS">In Progress</option>
-                  <option value="COMPLETED">Completed</option>
-                </select>
+                />
+                {errors.date && (
+                  <p className="mt-1 text-sm text-red-600">{errors.date.message}</p>
+                )}
               </div>
-            )}
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Amount</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  {...register('allocatedAmount', { 
+                    required: 'Amount is required',
+                    min: { value: 0, message: 'Amount must be positive' }
+                  })}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 sm:text-sm"
+                />
+                {errors.allocatedAmount && (
+                  <p className="mt-1 text-sm text-red-600">{errors.allocatedAmount.message}</p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Unit Price</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  {...register('unitPrice', { 
+                    required: 'Unit price is required',
+                    min: { value: 0.01, message: 'Unit price must be greater than 0' }
+                  })}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 sm:text-sm"
+                />
+                {errors.unitPrice && (
+                  <p className="mt-1 text-sm text-red-600">{errors.unitPrice.message}</p>
+                )}
+                {unitPrice > 0 && (
+                  <p className="mt-1 text-sm text-gray-500">
+                    Total Units: {totalUnits.toFixed(2)}
+                  </p>
+                )}
+              </div>
+
+              {round && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Status</label>
+                  <select
+                    {...register('status')}
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 sm:text-sm"
+                  >
+                    <option value="PENDING">Pending</option>
+                    <option value="IN_PROGRESS">In Progress</option>
+                    <option value="COMPLETED">Completed</option>
+                  </select>
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Description</label>
+              <textarea
+                {...register('description', {
+                  maxLength: { value: 500, message: 'Description cannot exceed 500 characters' }
+                })}
+                rows={3}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 sm:text-sm"
+                placeholder="General description of the feeding round..."
+              />
+              {errors.description && (
+                <p className="mt-1 text-sm text-red-600">{errors.description.message}</p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Observations</label>
+              <textarea
+                {...register('observations')}
+                rows={2}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 sm:text-sm"
+                placeholder="Any observations during the feeding round..."
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Special Circumstances</label>
+              <textarea
+                {...register('specialCircumstances')}
+                rows={2}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 sm:text-sm"
+                placeholder="Any special circumstances or conditions..."
+              />
+            </div>
 
             {feedingCategory && (
               <p className="text-sm text-gray-500">

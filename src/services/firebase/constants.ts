@@ -5,5 +5,6 @@ export const COLLECTIONS = {
   FEEDING_ROUNDS: 'feedingRounds',
   TREASURY: 'treasury',
   BENEFICIARIES: 'beneficiaries',
-  PAYMENTS: 'payments'
-} as const; 
+  PAYMENTS: 'payments',
+  PAYMENT_REQUESTS: 'paymentRequests'
+} as const;
