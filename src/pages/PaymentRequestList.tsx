@@ -191,6 +191,7 @@ function PaymentRequestList() {
         onClose={() => {
           setIsModalOpen(false);
           setSelectedRequest(null);
+          queryClient.invalidateQueries({ queryKey: ['paymentRequests'] });
         }}
         request={selectedRequest}
       />

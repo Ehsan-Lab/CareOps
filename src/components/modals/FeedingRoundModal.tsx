@@ -19,7 +19,7 @@ interface FeedingRoundFormData {
   description: string;
   observations: string;
   specialCircumstances: string;
-  status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED';
+  status?: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED';
 }
 
 export const FeedingRoundModal: React.FC<FeedingRoundModalProps> = ({ 
@@ -28,8 +28,8 @@ export const FeedingRoundModal: React.FC<FeedingRoundModalProps> = ({
   round 
 }) => {
   const queryClient = useQueryClient();
-  const categories = useStore((state) => state.treasuryCategories);
-  const feedingCategory = categories.find(c => c.name.toLowerCase() === 'feeding');
+  const { treasuryCategories, setFeedingRounds, feedingRounds } = useStore();
+  const feedingCategory = treasuryCategories.find(c => c.name.toLowerCase() === 'feeding');
   
   const { register, handleSubmit, watch, reset, formState: { errors } } = useForm<FeedingRoundFormData>({
     defaultValues: round ? {
@@ -50,10 +50,6 @@ export const FeedingRoundModal: React.FC<FeedingRoundModalProps> = ({
       status: 'PENDING'
     }
   });
-
-  const allocatedAmount = parseFloat(watch('allocatedAmount') || '0');
-  const unitPrice = parseFloat(watch('unitPrice') || '0');
-  const totalUnits = unitPrice > 0 ? allocatedAmount / unitPrice : 0;
 
   React.useEffect(() => {
     if (round) {
@@ -79,6 +75,10 @@ export const FeedingRoundModal: React.FC<FeedingRoundModalProps> = ({
     }
   }, [round, reset]);
 
+  const allocatedAmount = parseFloat(watch('allocatedAmount') || '0');
+  const unitPrice = parseFloat(watch('unitPrice') || '0');
+  const totalUnits = unitPrice > 0 ? allocatedAmount / unitPrice : 0;
+
   const onSubmit = async (data: FeedingRoundFormData) => {
     if (!feedingCategory) {
       alert('Feeding category not found');
@@ -96,16 +96,22 @@ export const FeedingRoundModal: React.FC<FeedingRoundModalProps> = ({
       };
 
       if (round?.id) {
-        await feedingRoundServices.update(round.id, formattedData);
+        const updatedRound = await feedingRoundServices.update(round.id, formattedData);
+        setFeedingRounds(
+          feedingRounds.map(r => 
+            r.id === round.id ? updatedRound : r
+          )
+        );
       } else {
-        await feedingRoundServices.create({
+        const newRound = await feedingRoundServices.create({
           ...formattedData,
           status: 'PENDING',
           categoryId: feedingCategory.id
         });
+        setFeedingRounds([...feedingRounds, newRound]);
       }
-      queryClient.invalidateQueries({ queryKey: ['feedingRounds'] });
-      queryClient.invalidateQueries({ queryKey: ['treasury'] });
+      queryClient.invalidateQueries({ queryKey: ['all-data'] });
+      reset();
       onClose();
     } catch (error) {
       console.error('Error saving feeding round:', error);

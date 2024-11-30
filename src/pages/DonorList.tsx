@@ -5,9 +5,11 @@ import { donorServices } from '../services/firebase';
 import { useQueryClient } from '@tanstack/react-query';
 import { Donor } from '../types/donor';
 import { useFirebaseQuery } from '../hooks/useFirebaseQuery';
+import { useStore } from '../store';
 
 const DonorList: React.FC = () => {
   const { isLoading, donors: queryDonors, donorsError } = useFirebaseQuery();
+  const { setDonors } = useStore();
   const donors = useMemo(() => queryDonors || [], [queryDonors]);
   const [isAddModalOpen, setIsAddModalOpen] = React.useState(false);
   const [selectedDonor, setSelectedDonor] = React.useState<Donor | null>(null);
@@ -17,11 +19,16 @@ const DonorList: React.FC = () => {
 
   const sortedAndFilteredDonors = useMemo(() => {
     return donors
-      ?.filter(donor => 
-        donor.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        donor.contact.toLowerCase().includes(searchTerm.toLowerCase())
-      )
-      .sort((a, b) => a[sortField].localeCompare(b[sortField]));
+      ?.filter(donor => {
+        if (!donor || typeof donor.name !== 'string' || typeof donor.contact !== 'string') {
+          console.warn('Invalid donor data:', donor);
+          return false;
+        }
+        const searchLower = searchTerm.toLowerCase();
+        return donor.name.toLowerCase().includes(searchLower) ||
+               donor.contact.toLowerCase().includes(searchLower);
+      })
+      .sort((a, b) => (a[sortField] || '').localeCompare(b[sortField] || ''));
   }, [donors, sortField, searchTerm]);
 
   React.useEffect(() => {
@@ -44,20 +51,19 @@ const DonorList: React.FC = () => {
   const handleDelete = async (id: string) => {
     if (window.confirm('Are you sure you want to delete this donor?')) {
       try {
-        // Optimistically remove the donor from the UI
-        queryClient.setQueryData(['donors'], (old: Donor[] | undefined) => 
-          old?.filter(donor => donor.id !== id)
-        );
+        // Optimistically update UI
+        const updatedDonors = donors.filter(donor => donor.id !== id);
+        setDonors(updatedDonors);
 
         // Perform the actual delete
         await donorServices.delete(id);
         
-        // Refetch to ensure sync
-        await queryClient.invalidateQueries({ queryKey: ['donors'] });
+        // Invalidate queries to ensure sync
+        queryClient.invalidateQueries({ queryKey: ['all-data'] });
       } catch (error) {
         console.error('Error deleting donor:', error);
-        // Revert optimistic update on error
-        queryClient.invalidateQueries({ queryKey: ['donors'] });
+        // Revert optimistic update on error by invalidating queries
+        queryClient.invalidateQueries({ queryKey: ['all-data'] });
         alert('Failed to delete donor');
       }
     }
