@@ -1,55 +1,109 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Helper functions
-    function isValidDonor() {
-      return request.resource.data.keys().hasAll(['name', 'contact']) &&
-             request.resource.data.name is string &&
-             request.resource.data.contact is string;
+    // Common validation functions
+    function isAuthenticated() {
+      return request.auth != null;
     }
-
-    function isValidDonation() {
-      return request.resource.data.keys().hasAll(['donorId', 'amount', 'purpose', 'date', 'categoryId']) &&
-             request.resource.data.amount is number &&
+    
+    function isValidStatus(status) {
+      return status in ['ACTIVE', 'INACTIVE', 'CREATED', 'PENDING', 'COMPLETED'];
+    }
+    
+    function isValidPaymentType(type) {
+      return type in ['ONE_TIME', 'RECURRING', 'SEASONAL'];
+    }
+    
+    function isValidFrequency(freq) {
+      return freq in ['weekly', 'monthly', 'quarterly', 'yearly'];
+    }
+    
+    function hasValidTimestamps() {
+      return request.resource.data.createdAt is timestamp &&
+             request.resource.data.updatedAt is timestamp;
+    }
+    
+    function isValidAmount() {
+      return request.resource.data.amount is number && 
              request.resource.data.amount > 0;
     }
 
-    function isValidTreasuryCategory() {
-      return request.resource.data.keys().hasAll(['name', 'balance']) &&
-             request.resource.data.name is string &&
-             request.resource.data.balance is number;
-    }
-
-    // Default rule - deny all
-    match /{document=**} {
-      allow read, write: if true;
-    }
-
-    // Collection specific rules
+    // Collection rules
     match /donors/{donorId} {
-      allow read: if true;
-      allow create: if isValidDonor();
-      allow update: if isValidDonor();
-      allow delete: if true;
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() &&
+                      hasValidTimestamps() &&
+                      request.resource.data.name is string &&
+                      request.resource.data.contact is string;
+      allow update: if isAuthenticated() &&
+                      request.resource.data.updatedAt is timestamp;
+      allow delete: if isAuthenticated();
     }
 
-    match /donations/{donationId} {
-      allow read: if true;
-      allow create: if isValidDonation();
-      allow update: if false; // Donations should not be updated
-      allow delete: if false; // Donations should not be deleted
+    match /beneficiaries/{beneficiaryId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() &&
+                      hasValidTimestamps() &&
+                      request.resource.data.name is string &&
+                      request.resource.data.status is string &&
+                      isValidStatus(request.resource.data.status);
+      allow update: if isAuthenticated() &&
+                      request.resource.data.updatedAt is timestamp &&
+                      (!request.resource.data.keys().hasAny(['status']) || 
+                        isValidStatus(request.resource.data.status));
+      allow delete: if isAuthenticated();
+    }
+
+    match /paymentRequests/{requestId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() &&
+                      hasValidTimestamps() &&
+                      isValidAmount() &&
+                      request.resource.data.beneficiaryId is string &&
+                      request.resource.data.treasuryId is string &&
+                      isValidPaymentType(request.resource.data.paymentType) &&
+                      request.resource.data.startDate is string &&
+                      isValidStatus(request.resource.data.status) &&
+                      (!request.resource.data.keys().hasAny(['frequency']) || 
+                        isValidFrequency(request.resource.data.frequency));
+      allow update: if isAuthenticated() &&
+                      request.resource.data.updatedAt is timestamp &&
+                      (!request.resource.data.keys().hasAny(['status']) || 
+                        isValidStatus(request.resource.data.status)) &&
+                      (!request.resource.data.keys().hasAny(['paymentType']) || 
+                        isValidPaymentType(request.resource.data.paymentType)) &&
+                      (!request.resource.data.keys().hasAny(['frequency']) || 
+                        isValidFrequency(request.resource.data.frequency));
+      allow delete: if isAuthenticated() &&
+                      get(path('/databases/$(database)/documents/paymentRequests/$(requestId)')).data.status != 'COMPLETED';
+    }
+
+    match /treasuryCategories/{categoryId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() &&
+                      hasValidTimestamps() &&
+                      request.resource.data.name is string &&
+                      request.resource.data.balance is number &&
+                      request.resource.data.balance >= 0;
+      allow update: if isAuthenticated() &&
+                      request.resource.data.updatedAt is timestamp &&
+                      (!request.resource.data.keys().hasAny(['balance']) || 
+                        request.resource.data.balance >= 0);
+      allow delete: if isAuthenticated() &&
+                      get(path('/databases/$(database)/documents/treasuryCategories/$(categoryId)')).data.balance == 0;
     }
 
     match /feedingRounds/{roundId} {
-      allow read: if true;
-      allow create: if request.resource.data.keys().hasAll(['date', 'allocatedAmount', 'defaultAmount', 'categoryId', 'status']);
-      allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']);
-    }
-
-    match /treasury/{categoryId} {
-      allow read: if true;
-      allow create: if isValidTreasuryCategory();
-      allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly(['balance']);
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() &&
+                      hasValidTimestamps() &&
+                      request.resource.data.date is string &&
+                      isValidAmount() &&
+                      request.resource.data.beneficiaryCount is number &&
+                      request.resource.data.beneficiaryCount > 0;
+      allow update: if isAuthenticated() &&
+                      request.resource.data.updatedAt is timestamp;
+      allow delete: if isAuthenticated();
     }
   }
 }

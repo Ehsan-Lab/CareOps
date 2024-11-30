@@ -10,18 +10,13 @@ import {
   orderBy,
   limit
 } from 'firebase/firestore';
-import { db, getConnectionStatus } from '../../config/firebase';
+import { db } from '../../config/firebase';
 import { Beneficiary } from '../../types';
 import { COLLECTIONS } from './constants';
 
 export const beneficiaryServices = {
   getAll: async () => {
     try {
-      if (!getConnectionStatus()) {
-        console.warn('Firebase connection not established, retrying...');
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
-
       // Create a simpler query first to avoid index issues
       const beneficiariesQuery = query(
         collection(db, COLLECTIONS.BENEFICIARIES),
@@ -64,10 +59,6 @@ export const beneficiaryServices = {
 
   create: async (data: Omit<Beneficiary, 'id' | 'status' | 'createdAt' | 'updatedAt'>) => {
     try {
-      if (!getConnectionStatus()) {
-        throw new Error('Firebase is not connected');
-      }
-
       const docRef = await addDoc(collection(db, COLLECTIONS.BENEFICIARIES), {
         ...data,
         status: 'ACTIVE',
@@ -85,10 +76,6 @@ export const beneficiaryServices = {
 
   update: async (id: string, data: Partial<Beneficiary>) => {
     try {
-      if (!getConnectionStatus()) {
-        throw new Error('Firebase is not connected');
-      }
-
       const docRef = doc(db, COLLECTIONS.BENEFICIARIES, id);
       await updateDoc(docRef, {
         ...data,
@@ -104,10 +91,6 @@ export const beneficiaryServices = {
 
   delete: async (id: string) => {
     try {
-      if (!getConnectionStatus()) {
-        throw new Error('Firebase is not connected');
-      }
-
       const docRef = doc(db, COLLECTIONS.BENEFICIARIES, id);
       await updateDoc(docRef, {
         status: 'INACTIVE',
