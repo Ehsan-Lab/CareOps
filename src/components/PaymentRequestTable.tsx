@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChevronDown, ChevronUp, Clock } from 'lucide-react';
+import { ChevronDown, ChevronUp, Clock, Pencil, Trash2 } from 'lucide-react';
 import { PaymentRequest, PaymentRequestStatus } from '../types/paymentRequest';
 import { formatCurrency, formatDate, formatDateTime } from '../utils/formatters';
 
@@ -12,6 +12,8 @@ interface PaymentRequestTableProps {
   onToggleExpand: (id: string | null) => void;
   getBeneficiaryName: (id: string) => string;
   getCategoryName: (id: string) => string;
+  onEdit: (request: PaymentRequest) => void;
+  onDelete: (request: PaymentRequest) => void;
 }
 
 export function PaymentRequestTable({
@@ -22,7 +24,9 @@ export function PaymentRequestTable({
   expandedId,
   onToggleExpand,
   getBeneficiaryName,
-  getCategoryName
+  getCategoryName,
+  onEdit,
+  onDelete
 }: PaymentRequestTableProps) {
   const getStatusColor = (status: PaymentRequestStatus) => {
     switch (status) {
@@ -67,7 +71,7 @@ export function PaymentRequestTable({
             Start Date
           </th>
           <th className="relative py-3.5 pl-3 pr-4 sm:pr-6">
-            <span className="sr-only">Details</span>
+            <span className="sr-only">Actions</span>
           </th>
         </tr>
       </thead>
@@ -113,16 +117,35 @@ export function PaymentRequestTable({
                 {formatDate(request.startDate)}
               </td>
               <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
-                <button
-                  onClick={() => onToggleExpand(expandedId === request.id ? null : request.id)}
-                  className="text-gray-400 hover:text-gray-500"
-                >
-                  {expandedId === request.id ? (
-                    <ChevronUp className="h-5 w-5" />
-                  ) : (
-                    <ChevronDown className="h-5 w-5" />
+                <div className="flex items-center justify-end gap-2">
+                  <button
+                    onClick={() => onEdit(request)}
+                    className="text-indigo-600 hover:text-indigo-900"
+                    title="Edit request"
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </button>
+                  {request.status !== 'COMPLETED' && (
+                    <button
+                      onClick={() => onDelete(request)}
+                      className="text-red-600 hover:text-red-900"
+                      title="Delete request"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
                   )}
-                </button>
+                  <button
+                    onClick={() => onToggleExpand(expandedId === request.id ? null : request.id)}
+                    className="text-gray-400 hover:text-gray-500"
+                    title="Toggle details"
+                  >
+                    {expandedId === request.id ? (
+                      <ChevronUp className="h-5 w-5" />
+                    ) : (
+                      <ChevronDown className="h-5 w-5" />
+                    )}
+                  </button>
+                </div>
               </td>
             </tr>
             {expandedId === request.id && (
