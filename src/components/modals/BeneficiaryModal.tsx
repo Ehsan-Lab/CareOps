@@ -3,6 +3,7 @@ import { useForm } from 'react-hook-form';
 import { X } from 'lucide-react';
 import { beneficiaryServices } from '../../services/firebase/beneficiaryService';
 import { useQueryClient } from '@tanstack/react-query';
+import { useStore } from '../../store';
 import { Beneficiary, SupportType } from '../../types';
 
 interface BeneficiaryModalProps {
@@ -25,6 +26,7 @@ export const BeneficiaryModal: React.FC<BeneficiaryModalProps> = ({
   beneficiary
 }) => {
   const queryClient = useQueryClient();
+  const { setBeneficiaries, beneficiaries } = useStore();
   
   const { register, handleSubmit, reset, formState: { errors } } = useForm<BeneficiaryFormData>({
     defaultValues: beneficiary ? {
@@ -65,11 +67,17 @@ export const BeneficiaryModal: React.FC<BeneficiaryModalProps> = ({
   const onSubmit = async (data: BeneficiaryFormData) => {
     try {
       if (beneficiary?.id) {
-        await beneficiaryServices.update(beneficiary.id, data);
+        const updatedBeneficiary = await beneficiaryServices.update(beneficiary.id, data);
+        setBeneficiaries(
+          beneficiaries.map(b => 
+            b.id === beneficiary.id ? updatedBeneficiary : b
+          )
+        );
       } else {
-        await beneficiaryServices.create(data);
+        const newBeneficiary = await beneficiaryServices.create(data);
+        setBeneficiaries([...beneficiaries, newBeneficiary]);
       }
-      queryClient.invalidateQueries({ queryKey: ['beneficiaries'] });
+      queryClient.invalidateQueries({ queryKey: ['all-data'] });
       onClose();
     } catch (error) {
       console.error('Error saving beneficiary:', error);

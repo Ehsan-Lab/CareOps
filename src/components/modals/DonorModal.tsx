@@ -3,8 +3,8 @@ import { useForm } from 'react-hook-form';
 import { X } from 'lucide-react';
 import { donorServices } from '../../services/firebase/donorService';
 import { useQueryClient } from '@tanstack/react-query';
-import { Donor } from '../../types/donor';
-import { validateFirebaseConnection } from '../../config/firebase';
+import { useStore } from '../../store';
+import { Donor } from '../../types';
 
 interface DonorModalProps {
   isOpen: boolean;
@@ -19,6 +19,7 @@ interface DonorFormData {
 
 export const DonorModal: React.FC<DonorModalProps> = ({ isOpen, onClose, donor }) => {
   const queryClient = useQueryClient();
+  const { setDonors, donors } = useStore();
   const { register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm<DonorFormData>({
     defaultValues: donor || { name: '', contact: '' }
   });
@@ -33,19 +34,20 @@ export const DonorModal: React.FC<DonorModalProps> = ({ isOpen, onClose, donor }
 
   const onSubmit = async (data: DonorFormData) => {
     try {
-      const isConnected = await validateFirebaseConnection();
-      if (!isConnected) {
-        throw new Error('Firebase connection failed');
-      }
-
       if (donor?.id) {
-        console.log('Updating donor:', donor.id, data);
-        await donorServices.update(donor.id, data);
+        const updatedDonor = await donorServices.update(donor.id.toString(), data) as Donor;
+        setDonors(
+          donors.map(d => 
+            d.id === donor.id ? { ...d, ...updatedDonor } : d
+          )
+        );
       } else {
-        console.log('Creating new donor:', data);
-        await donorServices.create(data);
+        const newDonor = await donorServices.create(data) as Donor;
+        if (newDonor) {
+          setDonors([...donors, newDonor]);
+        }
       }
-      queryClient.invalidateQueries({ queryKey: ['donors'] });
+      queryClient.invalidateQueries({ queryKey: ['all-data'] });
       reset();
       onClose();
     } catch (error) {

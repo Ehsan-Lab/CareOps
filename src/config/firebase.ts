@@ -1,12 +1,16 @@
 import { initializeApp } from 'firebase/app';
 import { 
   getFirestore, 
-  connectFirestoreEmulator,
-  enableIndexedDbPersistence,
   collection, 
   getDocs, 
-  addDoc,
-  deleteDoc
+  connectFirestoreEmulator,
+  enableIndexedDbPersistence,
+  enableMultiTabIndexedDbPersistence,
+  waitForPendingWrites,
+  onSnapshotsInSync,
+  disableNetwork,
+  enableNetwork,
+  Firestore
 } from 'firebase/firestore';
 
 const firebaseConfig = {
@@ -22,80 +26,146 @@ const firebaseConfig = {
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 
-// Initialize Firestore
-const db = getFirestore(app);
+// Initialize Firestore with better offline support
+export const db = getFirestore(app);
 
-// Add this function to validate Firebase connection
-const validateFirebaseConnection = async () => {
+// Connection state monitoring
+let isConnected = false;
+let isInitialized = false;
+let connectionStateListeners: ((status: boolean) => void)[] = [];
+let reconnectAttempts = 0;
+const MAX_RECONNECT_ATTEMPTS = 5;
+const RECONNECT_DELAY = 2000;
+
+export const getConnectionStatus = () => isConnected;
+export const getInitializationStatus = () => isInitialized;
+
+export const setConnectionStatus = (status: boolean) => {
+  const previousStatus = isConnected;
+  isConnected = status;
+  
+  if (previousStatus !== status) {
+    console.log(`Firebase connection status changed: ${status ? 'Connected' : 'Disconnected'}`);
+    connectionStateListeners.forEach(listener => listener(status));
+    
+    if (!status && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+      scheduleReconnect();
+    }
+  }
+};
+
+export const addConnectionStateListener = (listener: (status: boolean) => void) => {
+  connectionStateListeners.push(listener);
+  listener(isConnected);
+};
+
+export const removeConnectionStateListener = (listener: (status: boolean) => void) => {
+  connectionStateListeners = connectionStateListeners.filter(l => l !== listener);
+};
+
+const scheduleReconnect = () => {
+  setTimeout(async () => {
+    reconnectAttempts++;
+    console.log(`Attempting to reconnect (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})...`);
+    
+    try {
+      await enableNetwork(db);
+      await validateFirebaseConnection();
+    } catch (error) {
+      console.error('Reconnection attempt failed:', error);
+      if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+        scheduleReconnect();
+      } else {
+        console.error('Max reconnection attempts reached. Please check your connection.');
+      }
+    }
+  }, RECONNECT_DELAY * reconnectAttempts);
+};
+
+// Initialize offline support with better error handling
+const initializeFirestore = async () => {
+  if (isInitialized) return true;
+
   try {
-    // Try to read from a collection to validate connection
-    const testRef = collection(db, 'test_connection');
-    await getDocs(testRef);
-    console.log('Firebase connection successful');
+    // Enable multi-tab persistence
+    await enableMultiTabIndexedDbPersistence(db);
+    console.log('Multi-tab offline persistence enabled');
+    isInitialized = true;
+    return true;
+  } catch (multiTabError) {
+    console.warn('Multi-tab persistence failed, falling back to single-tab:', multiTabError);
+    
+    try {
+      // Fallback to single-tab persistence
+      await enableIndexedDbPersistence(db);
+      console.log('Single-tab offline persistence enabled');
+      isInitialized = true;
+      return true;
+    } catch (error) {
+      console.error('Failed to enable offline persistence:', error);
+      
+      if (error instanceof Error) {
+        if (error.name === 'FirebaseError' && error.message.includes('already enabled')) {
+          console.log('Persistence was already enabled');
+          isInitialized = true;
+          return true;
+        }
+      }
+      return false;
+    }
+  }
+};
+
+// Validate Firebase Connection with enhanced retry logic
+export const validateFirebaseConnection = async (): Promise<boolean> => {
+  try {
+    if (!isInitialized) {
+      const initialized = await initializeFirestore();
+      if (!initialized) {
+        throw new Error('Failed to initialize Firestore');
+      }
+    }
+
+    // Try to fetch a small amount of data to verify connection
+    const querySnapshot = await getDocs(collection(db, 'beneficiaries'));
+    console.log('Firebase connection validated successfully');
+    
+    // Ensure any pending writes are processed
+    await waitForPendingWrites(db);
+    
+    reconnectAttempts = 0; // Reset reconnect attempts on successful connection
+    setConnectionStatus(true);
     return true;
   } catch (error) {
-    console.error('Firebase connection error:', error);
+    console.error('Firebase connection validation failed:', error);
+    
+    if (error instanceof Error) {
+      console.error('Error details:', {
+        message: error.message,
+        stack: error.stack,
+        name: error.name
+      });
+
+      // Handle specific error cases
+      if (error.message.includes('offline')) {
+        await disableNetwork(db);
+        console.log('Network disabled, operating in offline mode');
+      }
+    }
+
+    setConnectionStatus(false);
     return false;
   }
 };
 
-const defaultCategories = [
-  { name: 'General Fund', balance: 0, type: 'INCOME' },
-  { name: 'Medical Support', balance: 0, type: 'EXPENSE' },
-  { name: 'Feeding', balance: 0, type: 'EXPENSE' },
-  { name: 'Emergency Aid', balance: 0, type: 'EXPENSE' }
-];
-
-// Modify your initialize function
-const initializeFirestore = async () => {
-  try {
-    // First validate connection
-    const isConnected = await validateFirebaseConnection();
-    if (!isConnected) {
-      throw new Error('Failed to connect to Firebase');
-    }
-
-    // Rest of your initialization code...
-    if (typeof window !== 'undefined') {
-      await enableIndexedDbPersistence(db);
-    }
-
-    if (import.meta.env.DEV) {
-      connectFirestoreEmulator(db, 'localhost', 8080);
-    }
-
-    // Check and create default categories
-    const treasuryRef = collection(db, 'treasury');
-    const treasurySnapshot = await getDocs(treasuryRef);
-    
-    // Delete existing categories
-    for (const doc of treasurySnapshot.docs) {
-      await deleteDoc(doc.ref);
-    }
-
-    // Create new categories
-    for (const category of defaultCategories) {
-      await addDoc(treasuryRef, {
-        ...category,
-        createdAt: new Date(),
-        updatedAt: new Date()
-      });
-    }
-  } catch (error: unknown) {
-    if (error instanceof Error) {
-      console.error('Firestore initialization error:', error);
-      if ('code' in error && error.code === 'failed-precondition') {
-        console.warn('Multiple tabs open, persistence can only be enabled in one tab at a time.');
-      } else if ('code' in error && error.code === 'unimplemented') {
-        console.warn('The current browser does not support persistence.');
-      } else {
-        throw error;
-      }
-    }
-  }
-};
-
-// Initialize and export validation function
+// Initialize Firestore
 initializeFirestore().catch(console.error);
 
-export { db, validateFirebaseConnection };
+// Connect to Firestore emulator in development
+if (process.env.NODE_ENV === 'development') {
+  try {
+    connectFirestoreEmulator(db, 'localhost', 8080);
+  } catch (error) {
+    console.warn('Firestore emulator connection failed:', error);
+  }
+}
