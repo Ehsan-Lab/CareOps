@@ -1,49 +1,39 @@
-import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { AuthProvider } from './contexts/AuthContext';
+import { ProtectedRoute } from './components/ProtectedRoute';
+import LoginPage from './pages/LoginPage';
 import Layout from './components/Layout';
 import DonorList from './pages/DonorList';
-import DonationList from './pages/DonationList';
+import BeneficiaryList from './pages/BeneficiaryList';
+import PaymentRequestList from './pages/PaymentRequestList';
+import PaymentList from './pages/PaymentList';
 import FeedingRoundList from './pages/FeedingRoundList';
 import TreasuryList from './pages/TreasuryList';
-import TreasuryCategories from './pages/TreasuryCategories';
-import BeneficiaryList from './pages/BeneficiaryList';
-import PaymentList from './pages/PaymentList';
-import PaymentRequestList from './pages/PaymentRequestList';
-import { useFirebaseQuery } from './hooks/useFirebaseQuery';
+import DonationList from './pages/DonationList';
+import TreasuryCategoryList from './pages/TreasuryCategories';
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      refetchOnWindowFocus: false,
-      retry: 1
-    }
-  }
-});
+const queryClient = new QueryClient();
 
 function AppContent() {
-  const { isLoading } = useFirebaseQuery();
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600" />
-      </div>
-    );
-  }
-
   return (
     <Routes>
-      <Route path="/" element={<Layout />}>
-        <Route index element={<Navigate to="/donors" replace />} />
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/" element={
+        <ProtectedRoute>
+          <Layout />
+        </ProtectedRoute>
+      }>
+        <Route index element={<Navigate to="/payment-requests" replace />} />
         <Route path="donors" element={<DonorList />} />
         <Route path="donations" element={<DonationList />} />
+        <Route path="beneficiaries" element={<BeneficiaryList />} />
+        <Route path="payment-requests" element={<PaymentRequestList />} />
+        <Route path="payments" element={<PaymentList />} />
         <Route path="feeding-rounds" element={<FeedingRoundList />} />
         <Route path="treasury" element={<TreasuryList />} />
-        <Route path="treasury-categories" element={<TreasuryCategories />} />
-        <Route path="beneficiaries" element={<BeneficiaryList />} />
-        <Route path="payments" element={<PaymentList />} />
-        <Route path="payment-requests" element={<PaymentRequestList />} />
+        <Route path="treasury-categories" element={<TreasuryCategoryList />} />
+        <Route path="*" element={<Navigate to="/payment-requests" replace />} />
       </Route>
     </Routes>
   );
@@ -51,11 +41,13 @@ function AppContent() {
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <AppContent />
-      </BrowserRouter>
-    </QueryClientProvider>
+    <Router>
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <AppContent />
+        </AuthProvider>
+      </QueryClientProvider>
+    </Router>
   );
 }
 
