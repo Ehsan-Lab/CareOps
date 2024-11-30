@@ -8,7 +8,10 @@ import {
   query,
   where,
   orderBy,
-  getDoc
+  getDoc,
+  addDoc,
+  deleteDoc,
+  writeBatch
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { PaymentRequest, PaymentRequestStatus } from '../../types/paymentRequest';
@@ -187,6 +190,11 @@ export const paymentRequestServices = {
       console.error('Error updating payment request statuses:', error);
       throw error;
     }
+  },
+
+  delete: async (id: string): Promise<void> => {
+    const docRef = doc(db, PAYMENT_REQUESTS, id);
+    await deleteDoc(docRef);
   }
 };
 
