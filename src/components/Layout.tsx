@@ -1,10 +1,12 @@
 import React from 'react';
-import { Link, Outlet, useLocation } from 'react-router-dom';
-import { Heart, Users, Wallet, Utensils, Menu, CircleDollarSign, UserRound, CreditCard, FileText } from 'lucide-react';
+import { Link, Outlet, useLocation, NavLink } from 'react-router-dom';
+import { Heart, Users, Wallet, Utensils, Menu, CircleDollarSign, UserRound, CreditCard, FileText, LogOut } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 
 const Layout: React.FC = () => {
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
+  const { signOut } = useAuth();
 
   const navigation = [
     { name: 'Donors', href: '/donors', icon: Users },
@@ -44,7 +46,7 @@ const Layout: React.FC = () => {
           {navigation.map((item) => {
             const Icon = item.icon;
             return (
-              <Link
+              <NavLink
                 key={item.name}
                 to={item.href}
                 className={`group flex items-center rounded-md px-3 py-2 text-sm font-medium ${
@@ -62,9 +64,17 @@ const Layout: React.FC = () => {
                   }`}
                 />
                 {item.name}
-              </Link>
+              </NavLink>
             );
           })}
+
+          <button
+            onClick={signOut}
+            className="w-full group flex items-center px-2 py-2 text-sm font-medium rounded-md text-red-600 hover:bg-red-50"
+          >
+            <LogOut className="mr-3 h-5 w-5 flex-shrink-0" />
+            Sign Out
+          </button>
         </nav>
       </div>
 

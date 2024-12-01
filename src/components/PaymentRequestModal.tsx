@@ -4,8 +4,21 @@ import { X, Calendar, DollarSign, FileText, Clock } from 'lucide-react';
 import { paymentRequestServices } from '../services/firebase/paymentRequestService';
 import { useQueryClient } from '@tanstack/react-query';
 import { useStore } from '../store';
-import { PaymentRequest, PaymentRequestFormData, PaymentRequestStatus } from '../types/paymentRequest';
+import { PaymentRequest, PaymentRequestStatus } from '../types/paymentRequest';
 import { BeneficiaryCombobox } from './BeneficiaryCombobox';
+
+interface PaymentRequestFormData {
+  beneficiaryId: string;
+  treasuryId: string;
+  amount: number;
+  paymentType: 'ONE_TIME' | 'RECURRING' | 'SEASONAL';
+  startDate: string;
+  endDate?: string;
+  notes?: string;
+  frequency?: 'weekly' | 'monthly' | 'quarterly' | 'yearly';
+  description?: string;
+  status: PaymentRequestStatus;
+}
 
 interface PaymentRequestModalProps {
   isOpen: boolean;
@@ -21,9 +34,18 @@ export function PaymentRequestModal({
   beneficiaryId
 }: PaymentRequestModalProps) {
   const queryClient = useQueryClient();
-  const { treasuryCategories, beneficiaries, setPaymentRequests, paymentRequests } = useStore();
+  const { 
+    treasuryCategories, 
+    beneficiaries, 
+    setPaymentRequests, 
+    paymentRequests,
+    setTreasuryCategories 
+  } = useStore();
+  
   const activeBeneficiaries = beneficiaries.filter(b => b.status === 'ACTIVE');
-  const availableCategories = treasuryCategories.filter(c => c.balance > 0);
+  const availableCategories = treasuryCategories.filter(c => 
+    request?.treasuryId === c.id.toString() || c.balance > 0
+  );
 
   const { register, handleSubmit, watch, setValue, reset, formState: { errors } } = useForm<PaymentRequestFormData>({
     defaultValues: request ? {
@@ -33,9 +55,10 @@ export function PaymentRequestModal({
       paymentType: request.paymentType,
       startDate: request.startDate,
       endDate: request.endDate,
-      notes: request.notes,
+      notes: request.notes || '',
       frequency: request.frequency,
-      description: request.description
+      description: request.description || '',
+      status: request.status
     } : {
       beneficiaryId: beneficiaryId || '',
       treasuryId: '',
@@ -43,10 +66,12 @@ export function PaymentRequestModal({
       paymentType: 'ONE_TIME',
       startDate: new Date().toISOString().split('T')[0],
       notes: '',
-      description: ''
+      description: '',
+      status: 'CREATED'
     }
   });
 
+  // Reset form when request changes
   React.useEffect(() => {
     if (request) {
       reset({
@@ -56,9 +81,10 @@ export function PaymentRequestModal({
         paymentType: request.paymentType,
         startDate: request.startDate,
         endDate: request.endDate,
-        notes: request.notes,
+        notes: request.notes || '',
         frequency: request.frequency,
-        description: request.description
+        description: request.description || '',
+        status: request.status
       });
     } else {
       reset({
@@ -68,12 +94,23 @@ export function PaymentRequestModal({
         paymentType: 'ONE_TIME',
         startDate: new Date().toISOString().split('T')[0],
         notes: '',
-        description: ''
+        description: '',
+        status: 'CREATED'
       });
     }
   }, [request, beneficiaryId, reset]);
 
   const paymentType = watch('paymentType');
+
+  const updateTreasuryBalance = React.useCallback((categoryId: string, amount: number, isAdd: boolean) => {
+    setTreasuryCategories(
+      treasuryCategories.map(category =>
+        category.id.toString() === categoryId
+          ? { ...category, balance: category.balance + (isAdd ? amount : -amount) }
+          : category
+      )
+    );
+  }, [treasuryCategories, setTreasuryCategories]);
 
   const onSubmit = async (data: PaymentRequestFormData) => {
     try {
@@ -82,29 +119,64 @@ export function PaymentRequestModal({
         return;
       }
 
+      // Clean up the data by removing undefined values
+      const cleanData = Object.entries(data).reduce((acc, [key, value]) => {
+        if (value !== undefined) {
+          acc[key] = value;
+        }
+        return acc;
+      }, {} as Record<string, any>);
+
       const requestData = {
-        ...data,
+        ...cleanData,
         beneficiaryId: beneficiaryId || data.beneficiaryId,
-        status: 'CREATED' as PaymentRequestStatus
+        // Set empty strings to null for optional fields
+        endDate: data.endDate || null,
+        notes: data.notes || null,
+        frequency: data.frequency || null,
+        description: data.description || null
       };
 
       if (request?.id) {
+        // Handle treasury balance updates for status changes
+        if (request.status !== data.status) {
+          if (data.status === 'COMPLETED' && request.status !== 'COMPLETED') {
+            // Deduct from treasury when marking as completed
+            updateTreasuryBalance(data.treasuryId, data.amount, false);
+          } else if (request.status === 'COMPLETED' && data.status !== 'COMPLETED') {
+            // Add back to treasury when unmarking as completed
+            updateTreasuryBalance(data.treasuryId, request.amount, true);
+          }
+        } else if (data.status === 'COMPLETED' && (data.amount !== request.amount || data.treasuryId !== request.treasuryId)) {
+          // Handle amount or category changes for completed requests
+          if (data.treasuryId === request.treasuryId) {
+            // Same category, just update the difference
+            const difference = request.amount - data.amount;
+            updateTreasuryBalance(data.treasuryId, Math.abs(difference), difference > 0);
+          } else {
+            // Different category, revert old and apply new
+            updateTreasuryBalance(request.treasuryId, request.amount, true);
+            updateTreasuryBalance(data.treasuryId, data.amount, false);
+          }
+        }
+
         const updatedRequest = await paymentRequestServices.update(request.id, requestData);
-        // Update store with the returned request
         setPaymentRequests(
           paymentRequests.map(pr => 
-            pr.id === request.id ? updatedRequest : pr
+            pr.id === request.id ? { ...pr, ...updatedRequest } : pr
           )
         );
       } else {
+        // For new requests marked as completed, deduct from treasury immediately
+        if (data.status === 'COMPLETED') {
+          updateTreasuryBalance(data.treasuryId, data.amount, false);
+        }
+
         const newRequest = await paymentRequestServices.create(requestData);
-        // Add the new request to store
         setPaymentRequests([...paymentRequests, newRequest]);
       }
       
-      // Invalidate queries to ensure consistency
       queryClient.invalidateQueries({ queryKey: ['all-data'] });
-      
       reset();
       onClose();
     } catch (error) {
@@ -252,25 +324,46 @@ export function PaymentRequestModal({
 
             <div>
               <label className="block text-sm font-medium text-gray-700">
+                Status
+              </label>
+              <select
+                {...register('status')}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+              >
+                <option value="CREATED">Created</option>
+                <option value="PENDING">Pending</option>
+                <option value="COMPLETED">Completed</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700">
+                <div className="flex items-center gap-1">
+                  <FileText className="h-4 w-4" />
+                  Notes
+                </div>
+              </label>
+              <textarea
+                {...register('notes')}
+                rows={3}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                placeholder="Add any additional notes here..."
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700">
                 <div className="flex items-center gap-1">
                   <FileText className="h-4 w-4" />
                   Description
                 </div>
               </label>
               <textarea
-                {...register('description', {
-                  maxLength: { value: 500, message: 'Description cannot exceed 500 characters' }
-                })}
+                {...register('description')}
                 rows={3}
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                placeholder="Add any relevant details, conditions, or special circumstances..."
+                placeholder="Add a description..."
               />
-              {errors.description && (
-                <p className="mt-1 text-sm text-red-600">{errors.description.message}</p>
-              )}
-              <p className="mt-1 text-xs text-gray-500">
-                {watch('description')?.length || 0}/500 characters
-              </p>
             </div>
 
             <div className="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse">
@@ -278,7 +371,7 @@ export function PaymentRequestModal({
                 type="submit"
                 className="inline-flex w-full justify-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 text-base font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 sm:ml-3 sm:w-auto sm:text-sm"
               >
-                {request ? 'Update' : 'Create'} Request
+                {request ? 'Update' : 'Create'}
               </button>
               <button
                 type="button"
