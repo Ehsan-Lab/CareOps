@@ -64,6 +64,7 @@ export const useFirebaseQuery = () => {
     queryKey: ['all-data'],
     queryFn: async () => {
       try {
+        console.log('Fetching all data...');
         const [
           beneficiariesData,
           donorsData,
@@ -81,6 +82,8 @@ export const useFirebaseQuery = () => {
           paymentServices.getAll(),
           paymentRequestServices.getAll()
         ]);
+
+        console.log('Fetched payments:', paymentsData);
 
         setBeneficiaries(beneficiariesData);
         setDonors(donorsData);
@@ -106,7 +109,11 @@ export const useFirebaseQuery = () => {
     },
     enabled: !isValidating,
     retry: 3,
-    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000)
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000),
+    staleTime: 5000, // Data becomes stale after 5 seconds
+    cacheTime: 30000, // Cache data for 30 seconds
+    refetchOnWindowFocus: true, // Refetch when window regains focus
+    refetchOnMount: true // Refetch when component mounts
   });
 
   return {

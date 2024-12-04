@@ -35,7 +35,7 @@ service cloud.firestore {
                       hasValidTimestamps() &&
                       request.resource.data.name is string &&
                       request.resource.data.contact is string;
-      allow update: if isAuthenticated() &&
+      allow update: if isAuthenticated() && 
                       request.resource.data.updatedAt is timestamp;
       allow delete: if isAuthenticated();
     }
