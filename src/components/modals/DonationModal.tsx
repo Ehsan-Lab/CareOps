@@ -1,14 +1,16 @@
 import React from 'react';
 import { useForm } from 'react-hook-form';
-import { X } from 'lucide-react';
+import { X, DollarSign, Calendar, FileText } from 'lucide-react';
 import { donationServices } from '../../services/firebase/donationService';
 import { useQueryClient } from '@tanstack/react-query';
 import { useStore } from '../../store';
 import { useFirebaseQuery } from '../../hooks/useFirebaseQuery';
+import { Donation } from '../../types';
 
 interface DonationModalProps {
   isOpen: boolean;
   onClose: () => void;
+  donation?: Donation | null;
 }
 
 interface DonationFormData {
@@ -19,13 +21,19 @@ interface DonationFormData {
   date: string;
 }
 
-export const DonationModal: React.FC<DonationModalProps> = ({ isOpen, onClose }) => {
+export const DonationModal: React.FC<DonationModalProps> = ({ isOpen, onClose, donation }) => {
   const queryClient = useQueryClient();
   const { donors } = useFirebaseQuery();
   const categories = useStore((state) => state.treasuryCategories);
   
-  const { register, handleSubmit, formState: { errors } } = useForm<DonationFormData>({
-    defaultValues: {
+  const { register, handleSubmit, reset, watch, formState: { errors } } = useForm<DonationFormData>({
+    defaultValues: donation ? {
+      donorId: donation.donorId,
+      amount: String(donation.amount),
+      purpose: donation.purpose,
+      categoryId: donation.categoryId,
+      date: donation.date
+    } : {
       donorId: '',
       amount: '',
       purpose: '',
@@ -34,20 +42,51 @@ export const DonationModal: React.FC<DonationModalProps> = ({ isOpen, onClose })
     }
   });
 
+  React.useEffect(() => {
+    if (donation) {
+      reset({
+        donorId: donation.donorId,
+        amount: String(donation.amount),
+        purpose: donation.purpose,
+        categoryId: donation.categoryId,
+        date: donation.date
+      });
+    } else {
+      reset({
+        donorId: '',
+        amount: '',
+        purpose: '',
+        categoryId: '',
+        date: new Date().toISOString().split('T')[0]
+      });
+    }
+  }, [donation, reset]);
+
+  const selectedCategoryId = watch('categoryId');
+  const selectedCategory = categories.find(c => c.id === selectedCategoryId);
+
   const onSubmit = async (data: DonationFormData) => {
     try {
-      await donationServices.create({
-        ...data,
-        amount: parseFloat(data.amount),
-        donorId: String(data.donorId),
-        categoryId: String(data.categoryId)
-      });
-      queryClient.invalidateQueries({ queryKey: ['donations'] });
-      queryClient.invalidateQueries({ queryKey: ['treasury'] });
+      if (donation?.id) {
+        await donationServices.update(donation.id, {
+          ...data,
+          amount: parseFloat(data.amount),
+          donorId: data.donorId,
+          categoryId: data.categoryId
+        });
+      } else {
+        await donationServices.create({
+          ...data,
+          amount: parseFloat(data.amount),
+          donorId: data.donorId,
+          categoryId: data.categoryId
+        });
+      }
+      queryClient.invalidateQueries({ queryKey: ['all-data'] });
       onClose();
     } catch (error) {
       console.error('Error saving donation:', error);
-      alert('Failed to save donation. Please try again.');
+      alert('Failed to save donation: ' + (error as Error).message);
     }
   };
 
@@ -60,7 +99,7 @@ export const DonationModal: React.FC<DonationModalProps> = ({ isOpen, onClose })
         
         <div className="relative w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-medium">Add Donation</h3>
+            <h3 className="text-lg font-medium">{donation ? 'Edit Donation' : 'Add Donation'}</h3>
             <button onClick={onClose} className="text-gray-400 hover:text-gray-500">
               <X className="h-5 w-5" />
             </button>
@@ -84,11 +123,19 @@ export const DonationModal: React.FC<DonationModalProps> = ({ isOpen, onClose })
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700">Amount</label>
+              <label className="block text-sm font-medium text-gray-700">
+                <div className="flex items-center gap-1">
+                  <DollarSign className="h-4 w-4" />
+                  Amount
+                </div>
+              </label>
               <input
                 type="number"
                 step="0.01"
-                {...register('amount', { required: 'Amount is required', min: 0 })}
+                {...register('amount', { 
+                  required: 'Amount is required',
+                  min: { value: 0.01, message: 'Amount must be greater than 0' }
+                })}
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
               />
               {errors.amount && (
@@ -97,7 +144,12 @@ export const DonationModal: React.FC<DonationModalProps> = ({ isOpen, onClose })
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700">Purpose</label>
+              <label className="block text-sm font-medium text-gray-700">
+                <div className="flex items-center gap-1">
+                  <FileText className="h-4 w-4" />
+                  Purpose
+                </div>
+              </label>
               <input
                 type="text"
                 {...register('purpose', { required: 'Purpose is required' })}
@@ -116,16 +168,28 @@ export const DonationModal: React.FC<DonationModalProps> = ({ isOpen, onClose })
               >
                 <option value="">Select a category</option>
                 {categories.map((category) => (
-                  <option key={category.id} value={category.id}>{category.name}</option>
+                  <option key={category.id} value={category.id}>
+                    {category.name} (Current Balance: ${category.balance?.toFixed(2) || '0.00'})
+                  </option>
                 ))}
               </select>
               {errors.categoryId && (
                 <p className="mt-1 text-sm text-red-600">{errors.categoryId.message}</p>
               )}
+              {selectedCategory && (
+                <p className="mt-1 text-sm text-gray-500">
+                  Current Balance: ${selectedCategory.balance?.toFixed(2) || '0.00'}
+                </p>
+              )}
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700">Date</label>
+              <label className="block text-sm font-medium text-gray-700">
+                <div className="flex items-center gap-1">
+                  <Calendar className="h-4 w-4" />
+                  Date
+                </div>
+              </label>
               <input
                 type="date"
                 {...register('date', { required: 'Date is required' })}
@@ -148,7 +212,7 @@ export const DonationModal: React.FC<DonationModalProps> = ({ isOpen, onClose })
                 type="submit"
                 className="rounded-md bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-700"
               >
-                Add Donation
+                {donation ? 'Save Changes' : 'Add Donation'}
               </button>
             </div>
           </form>
