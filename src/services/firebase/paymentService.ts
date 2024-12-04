@@ -5,20 +5,30 @@ import {
   updateDoc, 
   Timestamp,
   runTransaction,
-  getDoc
+  getDoc,
+  query,
+  where
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { Payment } from '../../types';
 import { COLLECTIONS } from './constants';
 
-interface CreatePaymentData extends Omit<Payment, 'id' | 'status' | 'createdAt' | 'updatedAt'> {
+interface CreatePaymentData extends Omit<Payment, 'id' | 'status' | 'createdAt' | 'updatedAt' | 'deletedAt' | 'deletedBy' | 'isDeleted'> {
   isFromPendingRequest?: boolean;
 }
 
+/*
+* Payment Services
+*/
 export const paymentServices = {
   getAll: async () => {
     try {
-      const querySnapshot = await getDocs(collection(db, COLLECTIONS.PAYMENTS));
+      const querySnapshot = await getDocs(
+        query(
+          collection(db, COLLECTIONS.PAYMENTS),
+          where('isDeleted', 'in', [false, null])
+        )
+      );
       return querySnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
@@ -34,6 +44,8 @@ export const paymentServices = {
       if (data.amount <= 0) {
         throw new Error('Amount must be greater than 0');
       }
+
+      let createdPayment: Payment | null = null;
 
       await runTransaction(db, async (transaction) => {
         // Check treasury balance
@@ -61,13 +73,20 @@ export const paymentServices = {
 
         // Create payment
         const paymentRef = doc(collection(db, COLLECTIONS.PAYMENTS));
-        transaction.set(paymentRef, {
+        const paymentData = {
           ...data,
+          id: paymentRef.id,
           status: 'COMPLETED',
+          isDeleted: false,
           createdAt: Timestamp.now(),
           updatedAt: Timestamp.now()
-        });
+        };
+
+        transaction.set(paymentRef, paymentData);
+        createdPayment = paymentData as Payment;
       });
+
+      return createdPayment;
     } catch (error) {
       console.error('Error creating payment:', error);
       throw error;
@@ -178,6 +197,60 @@ export const paymentServices = {
       });
     } catch (error) {
       console.error('Error cancelling payment:', error);
+      throw error;
+    }
+  },
+
+  delete: async (id: string, userId: string) => {
+    try {
+      await runTransaction(db, async (transaction) => {
+        const paymentRef = doc(db, COLLECTIONS.PAYMENTS, id);
+        const paymentDoc = await transaction.get(paymentRef);
+        
+        if (!paymentDoc.exists()) {
+          throw new Error('Payment not found');
+        }
+
+        const paymentData = paymentDoc.data() as Payment;
+        
+        // Validate payment can be deleted
+        if (paymentData.isDeleted) {
+          throw new Error('Payment already deleted');
+        }
+        
+        if (paymentData.status === 'CANCELLED') {
+          throw new Error('Cannot delete cancelled payments');
+        }
+
+        // If payment was deducted from treasury (COMPLETED status), refund it
+        if (paymentData.status === 'COMPLETED') {
+          const categoryRef = doc(db, COLLECTIONS.TREASURY, paymentData.categoryId);
+          const categoryDoc = await transaction.get(categoryRef);
+          
+          if (!categoryDoc.exists()) {
+            throw new Error('Treasury category not found');
+          }
+
+          const currentBalance = categoryDoc.data().balance || 0;
+
+          // Refund amount to treasury
+          transaction.update(categoryRef, {
+            balance: currentBalance + paymentData.amount,
+            updatedAt: Timestamp.now()
+          });
+        }
+
+        // Soft delete the payment
+        transaction.update(paymentRef, {
+          isDeleted: true,
+          deletedAt: Timestamp.now(),
+          deletedBy: userId,
+          status: 'CANCELLED',
+          updatedAt: Timestamp.now()
+        });
+      });
+    } catch (error) {
+      console.error('Error deleting payment:', error);
       throw error;
     }
   }

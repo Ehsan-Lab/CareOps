@@ -1,7 +1,10 @@
 import React from 'react';
-import { ChevronDown, ChevronUp, Clock } from 'lucide-react';
+import { ChevronDown, ChevronUp, Clock, Trash2 } from 'lucide-react';
 import { Payment, PaymentStatus, PaymentType } from '../types';
 import { formatCurrency, formatDate, formatDateTime } from '../utils/formatters';
+import { useStore } from '../store';
+import { paymentServices } from '../services/firebase/paymentService';
+import { useQueryClient } from '@tanstack/react-query';
 
 interface PaymentTableProps {
   payments: Payment[];
@@ -24,6 +27,23 @@ export function PaymentTable({
   getBeneficiaryName,
   getCategoryName
 }: PaymentTableProps) {
+  const queryClient = useQueryClient();
+  const { user } = useStore();
+
+  const handleDelete = async (payment: Payment) => {
+    if (!window.confirm(`Are you sure you want to delete this ${payment.status.toLowerCase()} payment? This action cannot be undone.${payment.status === 'COMPLETED' ? ' The amount will be refunded to the treasury.' : ''}`)) {
+      return;
+    }
+
+    try {
+      await paymentServices.delete(payment.id, user?.uid || 'SYSTEM');
+      queryClient.invalidateQueries({ queryKey: ['all-data'] });
+    } catch (error) {
+      console.error('Error deleting payment:', error);
+      alert('Failed to delete payment: ' + (error as Error).message);
+    }
+  };
+
   const getPaymentTypeColor = (type: PaymentType) => {
     switch (type) {
       case 'ONE_TIME': return 'bg-blue-100 text-blue-800';
@@ -76,14 +96,14 @@ export function PaymentTable({
             Date
           </th>
           <th className="relative py-3.5 pl-3 pr-4 sm:pr-6">
-            <span className="sr-only">Details</span>
+            <span className="sr-only">Actions</span>
           </th>
         </tr>
       </thead>
       <tbody className="divide-y divide-gray-200 bg-white">
-        {payments.map((payment) => (
+        {payments.map(payment => (
           <React.Fragment key={payment.id}>
-            <tr className={expandedId === payment.id ? 'bg-gray-50' : undefined}>
+            <tr className={selectedPayments.includes(payment.id) ? 'bg-gray-50' : undefined}>
               <td className="relative px-7 sm:w-12 sm:px-6">
                 <input
                   type="checkbox"
@@ -92,13 +112,13 @@ export function PaymentTable({
                   onChange={(e) => onSelectPayment(payment.id, e.target.checked)}
                 />
               </td>
-              <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900">
-                {payment.id}
+              <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm text-gray-900">
+                {payment.id.slice(0, 8)}...
               </td>
               <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                 {getBeneficiaryName(payment.beneficiaryId)}
               </td>
-              <td className="whitespace-nowrap px-3 py-4 text-sm font-medium text-gray-900">
+              <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                 {formatCurrency(payment.amount)}
               </td>
               <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
@@ -118,39 +138,60 @@ export function PaymentTable({
                 {formatDate(payment.date)}
               </td>
               <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
-                <button
-                  onClick={() => onToggleExpand(expandedId === payment.id ? null : payment.id)}
-                  className="text-gray-400 hover:text-gray-500"
-                >
-                  {expandedId === payment.id ? (
-                    <ChevronUp className="h-5 w-5" />
-                  ) : (
-                    <ChevronDown className="h-5 w-5" />
+                <div className="flex items-center gap-2 justify-end">
+                  {payment.status !== 'CANCELLED' && (
+                    <button
+                      onClick={() => handleDelete(payment)}
+                      className="text-red-600 hover:text-red-900"
+                      title={`Delete ${payment.status.toLowerCase()} payment`}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
                   )}
-                </button>
+                  <button
+                    onClick={() => onToggleExpand(expandedId === payment.id ? null : payment.id)}
+                    className="text-gray-400 hover:text-gray-500"
+                  >
+                    {expandedId === payment.id ? (
+                      <ChevronUp className="h-5 w-5" />
+                    ) : (
+                      <ChevronDown className="h-5 w-5" />
+                    )}
+                  </button>
+                </div>
               </td>
             </tr>
             {expandedId === payment.id && (
               <tr>
-                <td colSpan={9} className="px-4 py-4 text-sm text-gray-500 bg-gray-50">
+                <td colSpan={9} className="px-4 py-4 bg-gray-50">
                   <div className="space-y-2">
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="flex items-start gap-8">
                       <div>
-                        <span className="font-medium">Beneficiary ID:</span> {payment.beneficiaryId}
+                        <h4 className="text-sm font-medium text-gray-900">Description</h4>
+                        <p className="mt-1 text-sm text-gray-500">{payment.description || 'No description provided'}</p>
                       </div>
                       <div>
-                        <span className="font-medium">Treasury ID:</span> {payment.categoryId}
+                        <h4 className="text-sm font-medium text-gray-900">Notes</h4>
+                        <p className="mt-1 text-sm text-gray-500">{payment.notes || 'No notes provided'}</p>
                       </div>
                     </div>
-                    {payment.notes && (
-                      <div>
-                        <span className="font-medium">Notes:</span> {payment.notes}
+                    <div className="flex items-center gap-4 text-sm text-gray-500">
+                      <div className="flex items-center gap-1">
+                        <Clock className="h-4 w-4" />
+                        Created: {formatDateTime(payment.createdAt)}
                       </div>
-                    )}
-                    <div className="flex items-center gap-2 text-xs text-gray-400">
-                      <Clock className="h-4 w-4" />
-                      Created: {formatDateTime(payment.createdAt)}
-                      {payment.updatedAt && ` • Updated: ${formatDateTime(payment.updatedAt)}`}
+                      {payment.updatedAt && payment.updatedAt !== payment.createdAt && (
+                        <div className="flex items-center gap-1">
+                          <Clock className="h-4 w-4" />
+                          Updated: {formatDateTime(payment.updatedAt)}
+                        </div>
+                      )}
+                      {payment.deletedAt && (
+                        <div className="flex items-center gap-1 text-red-500">
+                          <Clock className="h-4 w-4" />
+                          Deleted: {formatDateTime(payment.deletedAt)}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </td>
