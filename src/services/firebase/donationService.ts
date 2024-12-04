@@ -3,7 +3,9 @@ import {
   doc,
   getDocs, 
   Timestamp,
-  runTransaction
+  runTransaction,
+  getDoc,
+  updateDoc
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { Donation } from '../../types';
@@ -33,6 +35,10 @@ export const donationServices = {
 
   create: async (data: CreateDonationData) => {
     try {
+      if (data.amount <= 0) {
+        throw new Error('Amount must be greater than 0');
+      }
+
       await runTransaction(db, async (transaction) => {
         // First, do all reads
         const categoryRef = doc(db, COLLECTIONS.TREASURY, String(data.categoryId));
@@ -53,7 +59,8 @@ export const donationServices = {
           purpose: data.purpose,
           categoryId: String(data.categoryId),
           date: data.date,
-          createdAt: Timestamp.now()
+          createdAt: Timestamp.now(),
+          updatedAt: Timestamp.now()
         });
 
         // 2. Update treasury balance
@@ -64,6 +71,110 @@ export const donationServices = {
       });
     } catch (error) {
       console.error('Error creating donation:', error);
+      throw error;
+    }
+  },
+
+  update: async (id: string, data: Partial<Donation>) => {
+    try {
+      if (data.amount !== undefined && data.amount <= 0) {
+        throw new Error('Amount must be greater than 0');
+      }
+
+      await runTransaction(db, async (transaction) => {
+        const donationRef = doc(db, COLLECTIONS.DONATIONS, id);
+        const donationDoc = await transaction.get(donationRef);
+        
+        if (!donationDoc.exists()) {
+          throw new Error('Donation not found');
+        }
+
+        const currentDonation = donationDoc.data() as Donation;
+
+        // If amount or category is changing, we need to adjust treasury balances
+        if (data.amount !== undefined || data.categoryId !== undefined) {
+          // Subtract amount from original category
+          const originalCategoryRef = doc(db, COLLECTIONS.TREASURY, currentDonation.categoryId);
+          const originalCategoryDoc = await transaction.get(originalCategoryRef);
+          
+          if (!originalCategoryDoc.exists()) {
+            throw new Error('Original treasury category not found');
+          }
+
+          const originalBalance = originalCategoryDoc.data().balance || 0;
+          if (originalBalance < currentDonation.amount) {
+            throw new Error('Cannot update: original category has insufficient balance');
+          }
+
+          transaction.update(originalCategoryRef, {
+            balance: originalBalance - currentDonation.amount,
+            updatedAt: Timestamp.now()
+          });
+
+          // Add to new/current category
+          const newCategoryId = data.categoryId || currentDonation.categoryId;
+          const newCategoryRef = doc(db, COLLECTIONS.TREASURY, newCategoryId);
+          const newCategoryDoc = await transaction.get(newCategoryRef);
+          
+          if (!newCategoryDoc.exists()) {
+            throw new Error('New treasury category not found');
+          }
+
+          const newAmount = data.amount || currentDonation.amount;
+          transaction.update(newCategoryRef, {
+            balance: (newCategoryDoc.data().balance || 0) + newAmount,
+            updatedAt: Timestamp.now()
+          });
+        }
+
+        // Update donation
+        transaction.update(donationRef, {
+          ...data,
+          updatedAt: Timestamp.now()
+        });
+      });
+    } catch (error) {
+      console.error('Error updating donation:', error);
+      throw error;
+    }
+  },
+
+  delete: async (id: string) => {
+    try {
+      await runTransaction(db, async (transaction) => {
+        const donationRef = doc(db, COLLECTIONS.DONATIONS, id);
+        const donationDoc = await transaction.get(donationRef);
+        
+        if (!donationDoc.exists()) {
+          throw new Error('Donation not found');
+        }
+
+        const donationData = donationDoc.data() as Donation;
+
+        // Subtract amount from category
+        const categoryRef = doc(db, COLLECTIONS.TREASURY, donationData.categoryId);
+        const categoryDoc = await transaction.get(categoryRef);
+        
+        if (!categoryDoc.exists()) {
+          throw new Error('Treasury category not found');
+        }
+
+        const currentBalance = categoryDoc.data().balance || 0;
+        if (currentBalance < donationData.amount) {
+          throw new Error('Cannot delete: category has insufficient balance');
+        }
+
+        // Update treasury balance
+        transaction.update(categoryRef, {
+          balance: currentBalance - donationData.amount,
+          updatedAt: Timestamp.now()
+        });
+
+        // Delete donation
+        transaction.delete(donationRef);
+      });
+    } catch (error) {
+      console.error('Error deleting donation:', error);
       throw error;
     }
   }

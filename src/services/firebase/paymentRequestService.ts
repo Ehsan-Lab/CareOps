@@ -10,8 +10,7 @@ import {
   orderBy,
   getDoc,
   addDoc,
-  deleteDoc,
-  writeBatch
+  deleteDoc
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { PaymentRequest, PaymentRequestStatus } from '../../types/paymentRequest';
@@ -41,6 +40,10 @@ export const paymentRequestServices = {
 
   create: async (data: Omit<PaymentRequest, 'id' | 'status' | 'createdAt' | 'updatedAt'>): Promise<PaymentRequest> => {
     try {
+      if (data.amount <= 0) {
+        throw new Error('Amount must be greater than 0');
+      }
+
       let createdRequestId: string;
 
       await runTransaction(db, async (transaction) => {
@@ -100,47 +103,74 @@ export const paymentRequestServices = {
           throw new Error('Invalid status transition');
         }
 
-        // For PENDING status, validate date and reserve amount
-        if (status === 'PENDING') {
-          const startDate = new Date(requestData.startDate);
-          const currentDate = new Date();
-          const firstDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
-          
-          if (startDate < firstDayOfMonth) {
-            throw new Error('Cannot set Pending status for past months');
-          }
-
-          // Reserve amount in treasury
-          const categoryRef = doc(db, COLLECTIONS.TREASURY, requestData.treasuryId);
-          const categoryDoc = await transaction.get(categoryRef);
-          
-          if (!categoryDoc.exists()) {
-            throw new Error('Treasury category not found');
-          }
-
-          const currentBalance = categoryDoc.data().balance || 0;
-          if (currentBalance < requestData.amount) {
-            throw new Error('Insufficient funds in treasury');
-          }
-
-          transaction.update(categoryRef, {
-            balance: currentBalance - requestData.amount,
-            updatedAt: Timestamp.now()
-          });
+        // Handle treasury balance based on status changes
+        const categoryRef = doc(db, COLLECTIONS.TREASURY, requestData.treasuryId);
+        const categoryDoc = await transaction.get(categoryRef);
+        
+        if (!categoryDoc.exists()) {
+          throw new Error('Treasury category not found');
         }
 
-        // If status is COMPLETED, create a payment
-        if (status === 'COMPLETED') {
-          await paymentServices.create({
-            beneficiaryId: requestData.beneficiaryId,
-            categoryId: requestData.treasuryId,
-            amount: requestData.amount,
-            date: requestData.startDate,
-            paymentType: requestData.paymentType,
-            notes: requestData.notes,
-            description: requestData.description,
-            representativeId: 'SYSTEM'
-          });
+        const currentBalance = categoryDoc.data().balance || 0;
+
+        // Handle different status transitions
+        switch (status) {
+          case 'PENDING':
+            // Validate date
+            const startDate = new Date(requestData.startDate);
+            const currentDate = new Date();
+            const firstDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+            
+            if (startDate < firstDayOfMonth) {
+              throw new Error('Cannot set Pending status for past months');
+            }
+
+            // Check and reserve funds
+            if (currentBalance < requestData.amount) {
+              throw new Error('Insufficient funds in treasury');
+            }
+
+            // Reserve amount
+            transaction.update(categoryRef, {
+              balance: currentBalance - requestData.amount,
+              updatedAt: Timestamp.now()
+            });
+            break;
+
+          case 'COMPLETED':
+            // If coming from CREATED, deduct from treasury and create payment
+            if (requestData.status === 'CREATED') {
+              if (currentBalance < requestData.amount) {
+                throw new Error('Insufficient funds in treasury');
+              }
+              
+              // Create payment first
+              await paymentServices.create({
+                beneficiaryId: requestData.beneficiaryId,
+                categoryId: requestData.treasuryId,
+                amount: requestData.amount,
+                date: requestData.startDate,
+                paymentType: requestData.paymentType,
+                notes: requestData.notes,
+                description: requestData.description,
+                representativeId: 'SYSTEM'
+              });
+            }
+            // If coming from PENDING, just create payment (amount already reserved)
+            else if (requestData.status === 'PENDING') {
+              await paymentServices.create({
+                beneficiaryId: requestData.beneficiaryId,
+                categoryId: requestData.treasuryId,
+                amount: requestData.amount,
+                date: requestData.startDate,
+                paymentType: requestData.paymentType,
+                notes: requestData.notes,
+                description: requestData.description,
+                representativeId: 'SYSTEM',
+                isFromPendingRequest: true // Flag to prevent double deduction
+              });
+            }
+            break;
         }
 
         // Update request status
@@ -157,16 +187,72 @@ export const paymentRequestServices = {
 
   update: async (id: string, data: Partial<PaymentRequest>): Promise<PaymentRequest> => {
     try {
-      const docRef = doc(db, PAYMENT_REQUESTS, id);
-      const updateData = {
-        ...data,
-        updatedAt: Timestamp.now()
-      };
-      
-      await updateDoc(docRef, updateData);
+      if (data.amount !== undefined && data.amount <= 0) {
+        throw new Error('Amount must be greater than 0');
+      }
 
-      // Fetch and return the updated request
-      const updatedDoc = await getDoc(docRef);
+      await runTransaction(db, async (transaction) => {
+        const docRef = doc(db, PAYMENT_REQUESTS, id);
+        const requestDoc = await transaction.get(docRef);
+        
+        if (!requestDoc.exists()) {
+          throw new Error('Payment request not found');
+        }
+
+        const currentRequest = requestDoc.data() as PaymentRequest;
+
+        // If amount or category is changing and status is PENDING, we need to adjust treasury
+        if (currentRequest.status === 'PENDING' && 
+            (data.amount !== undefined || data.treasuryId !== undefined)) {
+          
+          // Get current category balance
+          const currentCategoryRef = doc(db, COLLECTIONS.TREASURY, currentRequest.treasuryId);
+          const currentCategoryDoc = await transaction.get(currentCategoryRef);
+          
+          if (!currentCategoryDoc.exists()) {
+            throw new Error('Current treasury category not found');
+          }
+
+          // Return reserved amount to current category
+          transaction.update(currentCategoryRef, {
+            balance: (currentCategoryDoc.data().balance || 0) + currentRequest.amount,
+            updatedAt: Timestamp.now()
+          });
+
+          // If changing category, get new category balance
+          const newCategoryId = data.treasuryId || currentRequest.treasuryId;
+          const newCategoryRef = doc(db, COLLECTIONS.TREASURY, newCategoryId);
+          const newCategoryDoc = await transaction.get(newCategoryRef);
+          
+          if (!newCategoryDoc.exists()) {
+            throw new Error('New treasury category not found');
+          }
+
+          // Reserve amount from new category
+          const newAmount = data.amount || currentRequest.amount;
+          const newBalance = newCategoryDoc.data().balance || 0;
+          
+          if (newBalance < newAmount) {
+            throw new Error('Insufficient funds in new category');
+          }
+
+          transaction.update(newCategoryRef, {
+            balance: newBalance - newAmount,
+            updatedAt: Timestamp.now()
+          });
+        }
+
+        // Update request
+        const updateData = {
+          ...data,
+          updatedAt: Timestamp.now()
+        };
+        
+        transaction.update(docRef, updateData);
+      });
+
+      // Fetch and return updated request
+      const updatedDoc = await getDoc(doc(db, PAYMENT_REQUESTS, id));
       if (!updatedDoc.exists()) {
         throw new Error('Failed to fetch updated request');
       }
@@ -181,26 +267,45 @@ export const paymentRequestServices = {
     }
   },
 
-  bulkUpdateStatus: async (ids: string[], status: PaymentRequestStatus) => {
+  delete: async (id: string): Promise<void> => {
     try {
-      await Promise.all(
-        ids.map(id => paymentRequestServices.updateStatus(id, status))
-      );
+      await runTransaction(db, async (transaction) => {
+        const requestRef = doc(db, PAYMENT_REQUESTS, id);
+        const requestDoc = await transaction.get(requestRef);
+        
+        if (!requestDoc.exists()) {
+          throw new Error('Payment request not found');
+        }
+
+        const requestData = requestDoc.data() as PaymentRequest;
+
+        // If status is PENDING, return reserved amount to treasury
+        if (requestData.status === 'PENDING') {
+          const categoryRef = doc(db, COLLECTIONS.TREASURY, requestData.treasuryId);
+          const categoryDoc = await transaction.get(categoryRef);
+          
+          if (!categoryDoc.exists()) {
+            throw new Error('Treasury category not found');
+          }
+
+          transaction.update(categoryRef, {
+            balance: (categoryDoc.data().balance || 0) + requestData.amount,
+            updatedAt: Timestamp.now()
+          });
+        }
+
+        transaction.delete(requestRef);
+      });
     } catch (error) {
-      console.error('Error updating payment request statuses:', error);
+      console.error('Error deleting payment request:', error);
       throw error;
     }
-  },
-
-  delete: async (id: string): Promise<void> => {
-    const docRef = doc(db, PAYMENT_REQUESTS, id);
-    await deleteDoc(docRef);
   }
 };
 
 function isValidStatusTransition(currentStatus: PaymentRequestStatus, newStatus: PaymentRequestStatus): boolean {
   const validTransitions: Record<PaymentRequestStatus, PaymentRequestStatus[]> = {
-    'CREATED': ['PENDING'],
+    'CREATED': ['PENDING', 'COMPLETED'],
     'PENDING': ['COMPLETED'],
     'COMPLETED': []
   };
