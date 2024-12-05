@@ -4,8 +4,8 @@ import {
   getDocs, 
   Timestamp,
   runTransaction,
-  query,
-  where
+  getDoc,
+  updateDoc
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { Donation } from '../../types';
@@ -22,18 +22,11 @@ interface CreateDonationData {
 export const donationServices = {
   getAll: async () => {
     try {
-      const querySnapshot = await getDocs(
-        query(
-          collection(db, COLLECTIONS.DONATIONS),
-          where('isDeleted', 'in', [false, null])
-        )
-      );
-      const donations = querySnapshot.docs.map(doc => ({
+      const querySnapshot = await getDocs(collection(db, COLLECTIONS.DONATIONS));
+      return querySnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
-      }));
-      console.log('Fetched donations:', donations);
-      return donations as Donation[];
+      })) as Donation[];
     } catch (error) {
       console.error('Error fetching donations:', error);
       throw error;
@@ -46,13 +39,9 @@ export const donationServices = {
         throw new Error('Amount must be greater than 0');
       }
 
-      let createdDonation: Donation | null = null;
-
       await runTransaction(db, async (transaction) => {
-        console.log('Starting donation creation transaction...');
-        
         // First, do all reads
-        const categoryRef = doc(db, COLLECTIONS.TREASURY, data.categoryId);
+        const categoryRef = doc(db, COLLECTIONS.TREASURY, String(data.categoryId));
         const categoryDoc = await transaction.get(categoryRef);
         
         if (!categoryDoc.exists()) {
@@ -60,40 +49,26 @@ export const donationServices = {
         }
 
         const currentBalance = categoryDoc.data().balance || 0;
-        console.log('Current treasury balance:', currentBalance);
 
         // Then, do all writes
         // 1. Create donation
         const donationRef = doc(collection(db, COLLECTIONS.DONATIONS));
-        const donationData = {
-          id: donationRef.id,
-          donorId: data.donorId,
-          amount: data.amount,
+        transaction.set(donationRef, {
+          donorId: String(data.donorId),
+          amount: Number(data.amount),
           purpose: data.purpose,
-          categoryId: data.categoryId,
+          categoryId: String(data.categoryId),
           date: data.date,
-          isDeleted: false,
           createdAt: Timestamp.now(),
-          updatedAt: Timestamp.now()
-        };
-
-        console.log('Creating donation:', donationData);
-        transaction.set(donationRef, donationData);
-        createdDonation = donationData as unknown as Donation;
-
-        // 2. Update treasury balance
-        const newBalance = currentBalance + data.amount;
-        console.log('New treasury balance will be:', newBalance);
-        
-        transaction.update(categoryRef, {
-          balance: newBalance,
           updatedAt: Timestamp.now()
         });
 
-        console.log('Transaction completed successfully');
+        // 2. Update treasury balance
+        transaction.update(categoryRef, {
+          balance: currentBalance + Number(data.amount),
+          updatedAt: Timestamp.now()
+        });
       });
-
-      return createdDonation;
     } catch (error) {
       console.error('Error creating donation:', error);
       throw error;
@@ -107,8 +82,6 @@ export const donationServices = {
       }
 
       await runTransaction(db, async (transaction) => {
-        console.log('Starting donation update transaction...');
-        
         const donationRef = doc(db, COLLECTIONS.DONATIONS, id);
         const donationDoc = await transaction.get(donationRef);
         
@@ -116,15 +89,10 @@ export const donationServices = {
           throw new Error('Donation not found');
         }
 
-        const currentDonation = donationDoc.data() as unknown as Donation;
-        if (currentDonation.isDeleted) {
-          throw new Error('Cannot update deleted donation');
-        }
+        const currentDonation = donationDoc.data() as Donation;
 
         // If amount or category is changing, we need to adjust treasury balances
         if (data.amount !== undefined || data.categoryId !== undefined) {
-          console.log('Amount or category is changing, adjusting treasury balances...');
-          
           // Subtract amount from original category
           const originalCategoryRef = doc(db, COLLECTIONS.TREASURY, currentDonation.categoryId);
           const originalCategoryDoc = await transaction.get(originalCategoryRef);
@@ -134,8 +102,9 @@ export const donationServices = {
           }
 
           const originalBalance = originalCategoryDoc.data().balance || 0;
-          console.log('Original category balance:', originalBalance);
-          console.log('Subtracting original amount:', currentDonation.amount);
+          if (originalBalance < currentDonation.amount) {
+            throw new Error('Cannot update: original category has insufficient balance');
+          }
 
           transaction.update(originalCategoryRef, {
             balance: originalBalance - currentDonation.amount,
@@ -152,11 +121,8 @@ export const donationServices = {
           }
 
           const newAmount = data.amount || currentDonation.amount;
-          const newBalance = (newCategoryDoc.data().balance || 0) + newAmount;
-          console.log('New category balance will be:', newBalance);
-
           transaction.update(newCategoryRef, {
-            balance: newBalance,
+            balance: (newCategoryDoc.data().balance || 0) + newAmount,
             updatedAt: Timestamp.now()
           });
         }
@@ -166,8 +132,6 @@ export const donationServices = {
           ...data,
           updatedAt: Timestamp.now()
         });
-
-        console.log('Transaction completed successfully');
       });
     } catch (error) {
       console.error('Error updating donation:', error);
@@ -175,11 +139,9 @@ export const donationServices = {
     }
   },
 
-  delete: async (id: string, userId: string) => {
+  delete: async (id: string) => {
     try {
       await runTransaction(db, async (transaction) => {
-        console.log('Starting donation deletion transaction...');
-        
         const donationRef = doc(db, COLLECTIONS.DONATIONS, id);
         const donationDoc = await transaction.get(donationRef);
         
@@ -187,10 +149,7 @@ export const donationServices = {
           throw new Error('Donation not found');
         }
 
-        const donationData = donationDoc.data() as unknown as Donation;
-        if (donationData.isDeleted) {
-          throw new Error('Donation already deleted');
-        }
+        const donationData = donationDoc.data() as Donation;
 
         // Subtract amount from category
         const categoryRef = doc(db, COLLECTIONS.TREASURY, donationData.categoryId);
@@ -201,31 +160,18 @@ export const donationServices = {
         }
 
         const currentBalance = categoryDoc.data().balance || 0;
-        console.log('Current treasury balance:', currentBalance);
-        console.log('Subtracting donation amount:', donationData.amount);
-
         if (currentBalance < donationData.amount) {
           throw new Error('Cannot delete: category has insufficient balance');
         }
 
-        const newBalance = currentBalance - donationData.amount;
-        console.log('New treasury balance will be:', newBalance);
-
         // Update treasury balance
         transaction.update(categoryRef, {
-          balance: newBalance,
+          balance: currentBalance - donationData.amount,
           updatedAt: Timestamp.now()
         });
 
-        // Soft delete the donation
-        transaction.update(donationRef, {
-          isDeleted: true,
-          deletedAt: Timestamp.now(),
-          deletedBy: userId,
-          updatedAt: Timestamp.now()
-        });
-
-        console.log('Transaction completed successfully');
+        // Delete donation
+        transaction.delete(donationRef);
       });
     } catch (error) {
       console.error('Error deleting donation:', error);
