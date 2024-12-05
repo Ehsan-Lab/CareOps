@@ -39,7 +39,7 @@ const Layout: React.FC = () => {
           ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0`}
       >
         <div className="flex h-16 items-center justify-center border-b border-gray-200">
-          <h1 className="text-xl font-bold text-indigo-600">Charity Manager</h1>
+          <h1 className="text-xl font-bold text-indigo-600">Care-Ops</h1>
         </div>
 
         <nav className="mt-5 space-y-1 px-2">

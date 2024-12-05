@@ -1,19 +1,13 @@
 import React from 'react';
-import { Heart, Plus, Pencil, Trash2 } from 'lucide-react';
+import { Heart, Plus } from 'lucide-react';
 import { useStore } from '../store';
 import { format } from 'date-fns';
 import { DonationModal } from '../components/modals/DonationModal';
 import { useFirebaseQuery } from '../hooks/useFirebaseQuery';
-import { useQueryClient } from '@tanstack/react-query';
-import { donationServices } from '../services/firebase/donationService';
-import { Donation } from '../types';
 
 const DonationList: React.FC = () => {
   const { donations, donors, treasuryCategories } = useFirebaseQuery();
-  const [isModalOpen, setIsModalOpen] = React.useState(false);
-  const [selectedDonation, setSelectedDonation] = React.useState<Donation | null>(null);
-  const queryClient = useQueryClient();
-  const { user } = useStore();
+  const [isAddModalOpen, setIsAddModalOpen] = React.useState(false);
 
   const getDonorName = (donorId: string) => {
     const donor = donors?.find(d => d.id === donorId);
@@ -23,25 +17,6 @@ const DonationList: React.FC = () => {
   const getCategoryName = (categoryId: string) => {
     const category = treasuryCategories?.find(c => c.id === categoryId);
     return category?.name || 'Unknown Category';
-  };
-
-  const handleEdit = (donation: Donation) => {
-    setSelectedDonation(donation);
-    setIsModalOpen(true);
-  };
-
-  const handleDelete = async (donation: Donation) => {
-    if (!window.confirm('Are you sure you want to delete this donation? The amount will be deducted from the treasury category.')) {
-      return;
-    }
-
-    try {
-      await donationServices.delete(donation.id, user?.uid || 'SYSTEM');
-      queryClient.invalidateQueries({ queryKey: ['all-data'] });
-    } catch (error) {
-      console.error('Error deleting donation:', error);
-      alert('Failed to delete donation: ' + (error as Error).message);
-    }
   };
 
   return (
@@ -59,10 +34,7 @@ const DonationList: React.FC = () => {
         <div className="mt-4 sm:ml-16 sm:mt-0 sm:flex-none">
           <button
             type="button"
-            onClick={() => {
-              setSelectedDonation(null);
-              setIsModalOpen(true);
-            }}
+            onClick={() => setIsAddModalOpen(true)}
             className="flex items-center gap-1 rounded-md bg-rose-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-600"
           >
             <Plus className="h-4 w-4" />
@@ -93,9 +65,6 @@ const DonationList: React.FC = () => {
                     <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                       Date
                     </th>
-                    <th className="relative py-3.5 pl-3 pr-4 sm:pr-6">
-                      <span className="sr-only">Actions</span>
-                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 bg-white">
@@ -116,24 +85,6 @@ const DonationList: React.FC = () => {
                       <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                         {format(new Date(donation.date), 'MMM d, yyyy')}
                       </td>
-                      <td className="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
-                        <div className="flex items-center gap-2 justify-end">
-                          <button
-                            onClick={() => handleEdit(donation)}
-                            className="text-indigo-600 hover:text-indigo-900"
-                            title="Edit donation"
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(donation)}
-                            className="text-red-600 hover:text-red-900"
-                            title="Delete donation"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -143,14 +94,7 @@ const DonationList: React.FC = () => {
         </div>
       </div>
 
-      <DonationModal 
-        isOpen={isModalOpen} 
-        onClose={() => {
-          setIsModalOpen(false);
-          setSelectedDonation(null);
-        }}
-        donation={selectedDonation}
-      />
+      <DonationModal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} />
     </div>
   );
 };
