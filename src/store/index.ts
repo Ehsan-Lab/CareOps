@@ -36,6 +36,7 @@ export const useStore = create<AppState>((set) => ({
   setPaymentRequests: (paymentRequests) => set({ paymentRequests })
 }));
 
+// for debugging , we console out the value of the store
 if (process.env.NODE_ENV === 'development') {
   useStore.subscribe((state) => {
     console.log('Store updated:', {

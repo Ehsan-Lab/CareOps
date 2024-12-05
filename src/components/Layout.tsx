@@ -13,10 +13,10 @@ const Layout: React.FC = () => {
     { name: 'Donations', href: '/donations', icon: Heart },
     { name: 'Feeding Rounds', href: '/feeding-rounds', icon: Utensils },
     { name: 'Treasury', href: '/treasury', icon: Wallet },
-    { name: 'Treasury Categories', href: '/treasury-categories', icon: CircleDollarSign },
+    // { name: 'Treasury Categories', href: '/treasury-categories', icon: CircleDollarSign },
     { name: 'Beneficiaries', href: '/beneficiaries', icon: UserRound },
     { name: 'Payments', href: '/payments', icon: CreditCard },
-    { name: 'Payment Requests', href: '/payment-requests', icon: FileText },
+    // { name: 'Payment Requests', href: '/payment-requests', icon: FileText },
   ];
 
   const isActive = (path: string) => location.pathname === path;
