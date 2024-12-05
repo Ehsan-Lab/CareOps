@@ -33,7 +33,7 @@ function AppContent() {
         <Route path="feeding-rounds" element={<FeedingRoundList />} />
         <Route path="treasury" element={<TreasuryList />} />
         {/* <Route path="treasury-categories" element={<TreasuryCategoryList />} /> */}
-        {/* <Route path="*" element={<Navigate to="/payment-requests" replace />} /> */}
+        <Route path="*" element={<Navigate to="/donors" replace />} />
       </Route>
     </Routes>
   );
