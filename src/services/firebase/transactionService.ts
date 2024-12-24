@@ -1,3 +1,9 @@
+/**
+ * @module TransactionService
+ * @description Service for managing complex financial transactions and maintaining transaction history
+ * Handles payment request lifecycle, transaction validation, and balance reconciliation
+ */
+
 import { 
   collection, 
   doc,
@@ -15,7 +21,33 @@ import { generateId } from '../../utils/idGenerator';
 import { validateTransaction, validatePaymentRequestTransition, validateBalances } from '../../utils/transactionValidator';
 import { COLLECTIONS } from './constants';
 
+/**
+ * @namespace transactionServices
+ * @description Service object containing transaction management operations and validation
+ */
 export const transactionServices = {
+  /**
+   * Creates a new payment request with validation and ID generation
+   * @async
+   * @param {Object} data - Payment request data
+   * @param {string} data.treasuryId - ID of the treasury category
+   * @param {string} data.beneficiaryId - ID of the beneficiary
+   * @param {number} data.amount - Amount to be paid
+   * @param {string} data.description - Description of the payment
+   * @param {string} data.paymentType - Type of payment
+   * @returns {Promise<string>} Generated request ID
+   * @throws {Error} If:
+   *  - Treasury category not found
+   *  - Transaction validation fails
+   *  - Transaction fails
+   * 
+   * @description
+   * This operation performs the following steps atomically:
+   * 1. Generates a unique payment request ID
+   * 2. Validates the treasury category exists
+   * 3. Validates the transaction details
+   * 4. Creates the payment request with CREATED status
+   */
   createPaymentRequest: async (data: any) => {
     try {
       const requestId = generateId('PR');
@@ -63,6 +95,26 @@ export const transactionServices = {
     }
   },
 
+  /**
+   * Completes a payment request by creating a payment and updating balances
+   * @async
+   * @param {string} requestId - Payment request ID to complete
+   * @returns {Promise<boolean>} True if completion successful
+   * @throws {Error} If:
+   *  - Payment request not found
+   *  - Status transition validation fails
+   *  - Treasury category not found
+   *  - Transaction fails
+   * 
+   * @description
+   * This operation performs the following steps atomically:
+   * 1. Validates the payment request exists
+   * 2. Generates a unique payment ID
+   * 3. Validates the status transition
+   * 4. Creates the payment record
+   * 5. Updates request status to COMPLETED
+   * 6. Updates treasury balance
+   */
   completePaymentRequest: async (requestId: string) => {
     try {
       await runTransaction(db, async (transaction) => {
@@ -132,6 +184,24 @@ export const transactionServices = {
     }
   },
 
+  /**
+   * Validates the entire transaction history and treasury balances
+   * @async
+   * @returns {Promise<boolean>} True if validation successful
+   * @throws {Error} If validation process fails
+   * 
+   * @description
+   * This operation performs the following steps:
+   * 1. Retrieves all payments and treasury categories
+   * 2. Maps transactions to source/destination/amount format
+   * 3. Aggregates current treasury balances
+   * 4. Validates that all balances match transaction history
+   * 
+   * Used for:
+   * - Periodic reconciliation
+   * - Audit checks
+   * - System integrity verification
+   */
   validateTransactionHistory: async () => {
     try {
       const [paymentsSnapshot, treasurySnapshot] = await Promise.all([

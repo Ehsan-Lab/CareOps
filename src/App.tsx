@@ -1,3 +1,8 @@
+/**
+ * @module App
+ * @description Main application component that sets up routing, authentication, and the application structure
+ */
+
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from './contexts/AuthContext';
@@ -13,8 +18,18 @@ import TreasuryList from './pages/TreasuryList';
 import DonationList from './pages/DonationList';
 import TreasuryCategoryList from './pages/TreasuryCategories';
 
+/**
+ * @constant
+ * @description Query client instance for managing API cache and requests
+ */
 const queryClient = new QueryClient();
 
+/**
+ * @component
+ * @description Internal component that handles the routing structure of the application
+ * Contains all routes and their corresponding components, including protected routes
+ * @returns {JSX.Element} The routing structure of the application
+ */
 function AppContent() {
   return (
     <Routes>
@@ -39,6 +54,12 @@ function AppContent() {
   );
 }
 
+/**
+ * @component
+ * @description Root component of the application that sets up core providers
+ * Wraps the application with Router, QueryClient, and Auth providers
+ * @returns {JSX.Element} The fully configured application with all necessary providers
+ */
 function App() {
   return (
     <Router>
