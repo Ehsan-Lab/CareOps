@@ -17,6 +17,7 @@ import FeedingRoundList from './pages/FeedingRoundList';
 import TreasuryList from './pages/TreasuryList';
 import DonationList from './pages/DonationList';
 import TreasuryCategoryList from './pages/TreasuryCategories';
+import Dashboard from './pages/Dashboard';
 
 /**
  * @constant
@@ -39,7 +40,7 @@ function AppContent() {
           <Layout />
         </ProtectedRoute>
       }>
-        <Route index element={<Navigate to="/payment-requests" replace />} />
+        <Route index element={<Dashboard />} />
         <Route path="donors" element={<DonorList />} />
         <Route path="donations" element={<DonationList />} />
         <Route path="beneficiaries" element={<BeneficiaryList />} />
@@ -48,7 +49,7 @@ function AppContent() {
         <Route path="feeding-rounds" element={<FeedingRoundList />} />
         <Route path="treasury" element={<TreasuryList />} />
         {/* <Route path="treasury-categories" element={<TreasuryCategoryList />} /> */}
-        <Route path="*" element={<Navigate to="/donors" replace />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
   );
