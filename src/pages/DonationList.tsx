@@ -8,6 +8,7 @@ import { useFirebaseQuery } from '../hooks/useFirebaseQuery';
 const DonationList: React.FC = () => {
   const { donations, donors, treasuryCategories } = useFirebaseQuery();
   const [isAddModalOpen, setIsAddModalOpen] = React.useState(false);
+  const [deletingIds, setDeletingIds] = React.useState<string[]>([]);
 
   const getDonorName = (donorId: string) => {
     const donor = donors?.find(d => d.id === donorId);
@@ -17,6 +18,10 @@ const DonationList: React.FC = () => {
   const getCategoryName = (categoryId: string) => {
     const category = treasuryCategories?.find(c => c.id === categoryId);
     return category?.name || 'Unknown Category';
+  };
+
+  const handleDelete = (id: string) => {
+    // Implement delete logic here
   };
 
   return (
@@ -65,6 +70,9 @@ const DonationList: React.FC = () => {
                     <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                       Date
                     </th>
+                    <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+                      Actions
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 bg-white">
@@ -84,6 +92,19 @@ const DonationList: React.FC = () => {
                       </td>
                       <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                         {format(new Date(donation.date), 'MMM d, yyyy')}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                        {deletingIds.includes(donation.id) ? (
+                          <span className="text-gray-400">Deleting...</span>
+                        ) : (
+                          <button
+                            onClick={() => handleDelete(donation.id)}
+                            disabled={deletingIds.includes(donation.id)}
+                            className="text-red-600 hover:text-red-900 disabled:opacity-50"
+                          >
+                            Delete
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}

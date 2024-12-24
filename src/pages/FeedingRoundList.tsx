@@ -17,6 +17,7 @@ const FeedingRoundList: React.FC = () => {
   const [sortField, setSortField] = useState<'date' | 'allocatedAmount' | 'unitPrice' | 'units'>('date');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const queryClient = useQueryClient();
+  const [isDeleting, setIsDeleting] = useState<string | null>(null);
 
   // Validate and transform feeding rounds data
   const validFeedingRounds = React.useMemo(() => {
@@ -87,8 +88,14 @@ const FeedingRoundList: React.FC = () => {
 
   const handleDelete = async (id: string) => {
     if (window.confirm('Are you sure you want to delete this feeding round?')) {
+      setIsDeleting(id);
       try {
+        // Optimistic update
+        const updatedRounds = validFeedingRounds.filter(round => round.id !== id);
+        queryClient.setQueryData(['feedingRounds'], updatedRounds);
+
         await feedingRoundServices.delete(id);
+        
         // Invalidate and refetch all relevant queries
         await Promise.all([
           queryClient.invalidateQueries({ queryKey: ['feedingRounds'] }),
@@ -99,13 +106,15 @@ const FeedingRoundList: React.FC = () => {
           queryClient.refetchQueries({ queryKey: ['all-data'] })
         ]);
 
-        // Update local state to remove the deleted round
-        const updatedRounds = validFeedingRounds.filter(round => round.id !== id);
-        // Force a re-render by updating the state
+        // Clean up expanded state
         setExpandedId(null);
       } catch (error) {
         console.error('Error deleting feeding round:', error);
+        // Revert optimistic update
+        queryClient.invalidateQueries({ queryKey: ['feedingRounds'] });
         alert('Failed to delete feeding round');
+      } finally {
+        setIsDeleting(null);
       }
     }
   };
@@ -289,11 +298,16 @@ const FeedingRoundList: React.FC = () => {
                                     <Pencil className="h-4 w-4" />
                                   </button>
                                   <button
-                                    className="text-red-600 hover:text-red-900"
+                                    className="text-red-600 hover:text-red-900 disabled:opacity-50 disabled:cursor-not-allowed"
                                     onClick={() => handleDelete(round.id)}
+                                    disabled={isDeleting === round.id}
                                     title="Delete Round"
                                   >
-                                    <Trash2 className="h-4 w-4" />
+                                    {isDeleting === round.id ? (
+                                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-red-600" />
+                                    ) : (
+                                      <Trash2 className="h-4 w-4" />
+                                    )}
                                   </button>
                                 </>
                               )}

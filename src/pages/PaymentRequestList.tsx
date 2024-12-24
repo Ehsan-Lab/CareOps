@@ -21,6 +21,31 @@ export default function PaymentRequestList() {
     setTreasuryCategories
   } = useStore();
 
+  const deletePaymentRequest = async (id: string) => {
+    // Optimistic update
+    queryClient.setQueryData(['paymentRequests'], (old: any) => 
+      old?.filter((request: any) => request.id !== id)
+    );
+
+    try {
+      setIsLoading(true);
+      await api.deletePaymentRequest(id);
+      
+      // Invalidate and refetch related queries
+      await Promise.all([
+        queryClient.invalidateQueries(['paymentRequests']),
+        queryClient.invalidateQueries(['treasuryStats']),
+        queryClient.invalidateQueries(['recentActivity'])
+      ]);
+    } catch (error) {
+      // Revert optimistic update on error
+      queryClient.invalidateQueries(['paymentRequests']);
+      toast.error('Failed to delete payment request');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleSelectRequest = (id: string, selected: boolean) => {
     setSelectedRequests(prev =>
       selected ? [...prev, id] : prev.filter(requestId => requestId !== id)
