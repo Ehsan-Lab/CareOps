@@ -18,6 +18,7 @@ const FeedingRoundList: React.FC = () => {
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const queryClient = useQueryClient();
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
+  const [updatingStatus, setUpdatingStatus] = useState<string | null>(null);
 
   // Validate and transform feeding rounds data
   const validFeedingRounds = React.useMemo(() => {
@@ -77,12 +78,30 @@ const FeedingRoundList: React.FC = () => {
   };
 
   const handleStatusUpdate = async (id: string, status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED') => {
+    setUpdatingStatus(id);
     try {
+      // Optimistic update
+      const updatedRounds = feedingRounds?.map(round => 
+        round.id === id ? { ...round, status } : round
+      );
+      queryClient.setQueryData(['feedingRounds'], updatedRounds);
+
       await feedingRoundServices.updateStatus(id, status);
-      queryClient.invalidateQueries({ queryKey: ['feedingRounds'] });
+      
+      // Invalidate and refetch all relevant queries
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['feedingRounds'] }),
+        queryClient.invalidateQueries({ queryKey: ['all-data'] }),
+        queryClient.refetchQueries({ queryKey: ['feedingRounds'] }),
+        queryClient.refetchQueries({ queryKey: ['all-data'] })
+      ]);
     } catch (error) {
       console.error('Error updating status:', error);
+      // Revert optimistic update
+      queryClient.invalidateQueries({ queryKey: ['feedingRounds'] });
       alert('Failed to update status');
+    } finally {
+      setUpdatingStatus(null);
     }
   };
 
@@ -272,20 +291,30 @@ const FeedingRoundList: React.FC = () => {
                               </button>
                               {round.status === 'PENDING' && (
                                 <button
-                                  className="text-blue-600 hover:text-blue-900"
+                                  className="text-blue-600 hover:text-blue-900 disabled:opacity-50 disabled:cursor-not-allowed"
                                   onClick={() => handleStatusUpdate(round.id, 'IN_PROGRESS')}
+                                  disabled={updatingStatus === round.id}
                                   title="Start Round"
                                 >
-                                  <Play className="h-4 w-4" />
+                                  {updatingStatus === round.id ? (
+                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600" />
+                                  ) : (
+                                    <Play className="h-4 w-4" />
+                                  )}
                                 </button>
                               )}
                               {round.status === 'IN_PROGRESS' && (
                                 <button
-                                  className="text-green-600 hover:text-green-900"
+                                  className="text-green-600 hover:text-green-900 disabled:opacity-50 disabled:cursor-not-allowed"
                                   onClick={() => handleStatusUpdate(round.id, 'COMPLETED')}
+                                  disabled={updatingStatus === round.id}
                                   title="Complete Round"
                                 >
-                                  <CheckCircle className="h-4 w-4" />
+                                  {updatingStatus === round.id ? (
+                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-green-600" />
+                                  ) : (
+                                    <CheckCircle className="h-4 w-4" />
+                                  )}
                                 </button>
                               )}
                               {round.status !== 'COMPLETED' && (
