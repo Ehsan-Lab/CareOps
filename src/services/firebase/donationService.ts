@@ -1,3 +1,9 @@
+/**
+ * @module DonationService
+ * @description Service for managing donation data and related treasury operations in Firestore
+ * Handles atomic transactions for donation creation, updates, and deletions while maintaining treasury balances
+ */
+
 import { 
   collection, 
   doc,
@@ -11,15 +17,34 @@ import { db } from '../../config/firebase';
 import { Donation } from '../../types';
 import { COLLECTIONS } from './constants';
 
+/**
+ * @interface CreateDonationData
+ * @description Data required to create a new donation
+ */
 interface CreateDonationData {
+  /** ID of the donor making the donation */
   donorId: string;
+  /** Amount being donated (must be positive) */
   amount: number;
+  /** Purpose or intended use of the donation */
   purpose: string;
+  /** ID of the treasury category to receive the funds */
   categoryId: string;
+  /** Date when the donation was made */
   date: string;
 }
 
+/**
+ * @namespace donationServices
+ * @description Service object containing donation-related operations with treasury balance management
+ */
 export const donationServices = {
+  /**
+   * Retrieves all donations from the database
+   * @async
+   * @returns {Promise<Donation[]>} Array of donation objects
+   * @throws {Error} If fetching donations fails
+   */
   getAll: async () => {
     try {
       const querySnapshot = await getDocs(collection(db, COLLECTIONS.DONATIONS));
@@ -33,6 +58,22 @@ export const donationServices = {
     }
   },
 
+  /**
+   * Creates a new donation and updates the corresponding treasury balance in a single transaction
+   * @async
+   * @param {CreateDonationData} data - Data for the new donation
+   * @throws {Error} If:
+   *  - Amount is not positive
+   *  - Treasury category doesn't exist
+   *  - Transaction fails
+   * 
+   * @description
+   * This operation performs the following steps atomically:
+   * 1. Validates the donation amount
+   * 2. Verifies the treasury category exists
+   * 3. Creates the donation record
+   * 4. Updates the treasury category balance
+   */
   create: async (data: CreateDonationData) => {
     try {
       if (data.amount <= 0) {
@@ -75,6 +116,27 @@ export const donationServices = {
     }
   },
 
+  /**
+   * Updates a donation and adjusts treasury balances if amount or category changes
+   * @async
+   * @param {string} id - Donation ID
+   * @param {Partial<Donation>} data - Updated donation data
+   * @throws {Error} If:
+   *  - Donation not found
+   *  - New amount is not positive
+   *  - Original/new treasury category not found
+   *  - Original category has insufficient balance
+   *  - Transaction fails
+   * 
+   * @description
+   * This operation performs the following steps atomically when amount or category changes:
+   * 1. Validates the new amount if provided
+   * 2. Retrieves and validates the original donation
+   * 3. If amount/category changed:
+   *    a. Subtracts original amount from original category
+   *    b. Adds new amount to new/current category
+   * 4. Updates the donation record
+   */
   update: async (id: string, data: Partial<Donation>) => {
     try {
       if (data.amount !== undefined && data.amount <= 0) {
@@ -139,6 +201,23 @@ export const donationServices = {
     }
   },
 
+  /**
+   * Deletes a donation and adjusts the corresponding treasury balance
+   * @async
+   * @param {string} id - Donation ID
+   * @throws {Error} If:
+   *  - Donation not found
+   *  - Treasury category not found
+   *  - Category has insufficient balance
+   *  - Transaction fails
+   * 
+   * @description
+   * This operation performs the following steps atomically:
+   * 1. Retrieves and validates the donation
+   * 2. Verifies the treasury category exists and has sufficient balance
+   * 3. Updates the treasury category balance
+   * 4. Deletes the donation record
+   */
   delete: async (id: string) => {
     try {
       await runTransaction(db, async (transaction) => {

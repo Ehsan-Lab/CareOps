@@ -1,3 +1,9 @@
+/**
+ * @module FeedingRoundService
+ * @description Service for managing feeding round events and related treasury operations in Firestore
+ * Handles the lifecycle of feeding events including creation, status management, and treasury balance adjustments
+ */
+
 import { 
   collection, 
   doc,
@@ -10,7 +16,17 @@ import { db } from '../../config/firebase';
 import { FeedingRound } from '../../types';
 import { COLLECTIONS } from './constants';
 
+/**
+ * @namespace feedingRoundServices
+ * @description Service object containing feeding round operations and treasury management
+ */
 export const feedingRoundServices = {
+  /**
+   * Retrieves all feeding rounds from the database
+   * @async
+   * @returns {Promise<FeedingRound[]>} Array of feeding round objects
+   * @throws {Error} If fetching rounds fails
+   */
   getAll: async () => {
     try {
       const querySnapshot = await getDocs(collection(db, COLLECTIONS.FEEDING_ROUNDS));
@@ -24,6 +40,22 @@ export const feedingRoundServices = {
     }
   },
 
+  /**
+   * Creates a new feeding round and allocates funds from treasury
+   * @async
+   * @param {Omit<FeedingRound, 'id'>} data - Feeding round data without ID
+   * @throws {Error} If:
+   *  - Feeding category not found
+   *  - Insufficient funds in category
+   *  - Transaction fails
+   * 
+   * @description
+   * This operation performs the following steps atomically:
+   * 1. Verifies the feeding category exists
+   * 2. Checks sufficient funds are available
+   * 3. Creates the feeding round record
+   * 4. Deducts allocated amount from treasury category
+   */
   create: async (data: Omit<FeedingRound, 'id'>) => {
     try {
       await runTransaction(db, async (transaction) => {
@@ -56,6 +88,17 @@ export const feedingRoundServices = {
     }
   },
 
+  /**
+   * Updates a feeding round's information
+   * @async
+   * @param {string} id - Feeding round ID
+   * @param {Partial<FeedingRound>} data - Updated feeding round data
+   * @throws {Error} If updating the round fails
+   * 
+   * @description
+   * Updates the feeding round details while maintaining the allocated amount.
+   * For changes to allocated amount, the round should be deleted and recreated.
+   */
   update: async (id: string, data: Partial<FeedingRound>) => {
     try {
       const docRef = doc(db, COLLECTIONS.FEEDING_ROUNDS, id);
@@ -69,6 +112,17 @@ export const feedingRoundServices = {
     }
   },
 
+  /**
+   * Updates the status of a feeding round
+   * @async
+   * @param {string} id - Feeding round ID
+   * @param {'PENDING' | 'IN_PROGRESS' | 'COMPLETED'} status - New status
+   * @throws {Error} If updating the status fails
+   * 
+   * @description
+   * Updates the feeding round status to track its progress.
+   * Status transitions: PENDING → IN_PROGRESS → COMPLETED
+   */
   updateStatus: async (id: string, status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED') => {
     try {
       const docRef = doc(db, COLLECTIONS.FEEDING_ROUNDS, id);
@@ -82,6 +136,22 @@ export const feedingRoundServices = {
     }
   },
 
+  /**
+   * Deletes a feeding round and refunds allocated amount to treasury
+   * @async
+   * @param {string} id - Feeding round ID
+   * @throws {Error} If:
+   *  - Feeding round not found
+   *  - Feeding category not found
+   *  - Transaction fails
+   * 
+   * @description
+   * This operation performs the following steps atomically:
+   * 1. Retrieves and validates the feeding round
+   * 2. Verifies the treasury category exists
+   * 3. Deletes the feeding round record
+   * 4. Refunds the allocated amount to treasury category
+   */
   delete: async (id: string) => {
     try {
       await runTransaction(db, async (transaction) => {

@@ -1,3 +1,9 @@
+/**
+ * @module PaymentRequestService
+ * @description Service for managing payment request workflow and related treasury operations in Firestore
+ * Handles the lifecycle of payment requests including creation, status transitions, and treasury balance management
+ */
+
 import { 
   collection, 
   doc,
@@ -17,9 +23,20 @@ import { PaymentRequest, PaymentRequestStatus } from '../../types/paymentRequest
 import { COLLECTIONS } from './constants';
 import { paymentServices } from './paymentService';
 
+/** Collection name for payment requests */
 const PAYMENT_REQUESTS = 'paymentRequests';
 
+/**
+ * @namespace paymentRequestServices
+ * @description Service object containing payment request operations and workflow management
+ */
 export const paymentRequestServices = {
+  /**
+   * Retrieves all payment requests ordered by start date
+   * @async
+   * @returns {Promise<PaymentRequest[]>} Array of payment request objects
+   * @throws {Error} If fetching requests fails
+   */
   getAll: async () => {
     try {
       const querySnapshot = await getDocs(
@@ -38,6 +55,23 @@ export const paymentRequestServices = {
     }
   },
 
+  /**
+   * Creates a new payment request with initial CREATED status
+   * @async
+   * @param {Omit<PaymentRequest, 'id' | 'status' | 'createdAt' | 'updatedAt'>} data - Payment request data
+   * @returns {Promise<PaymentRequest>} Created payment request object
+   * @throws {Error} If:
+   *  - Amount is not positive
+   *  - Treasury category doesn't exist
+   *  - Transaction fails
+   * 
+   * @description
+   * This operation performs the following steps atomically:
+   * 1. Validates the request amount
+   * 2. Verifies the treasury category exists
+   * 3. Creates the request with CREATED status
+   * Note: No funds are reserved at this stage
+   */
   create: async (data: Omit<PaymentRequest, 'id' | 'status' | 'createdAt' | 'updatedAt'>): Promise<PaymentRequest> => {
     try {
       if (data.amount <= 0) {
@@ -86,6 +120,35 @@ export const paymentRequestServices = {
     }
   },
 
+  /**
+   * Updates the status of a payment request and handles related treasury operations
+   * @async
+   * @param {string} id - Payment request ID
+   * @param {PaymentRequestStatus} status - New status to set
+   * @throws {Error} If:
+   *  - Request not found
+   *  - Invalid status transition
+   *  - Treasury category not found
+   *  - Insufficient funds
+   *  - Past date for PENDING status
+   *  - Transaction fails
+   * 
+   * @description
+   * This operation handles different status transitions with specific rules:
+   * 
+   * CREATED → PENDING:
+   * 1. Validates start date is not in past months
+   * 2. Checks sufficient funds in treasury
+   * 3. Reserves amount by deducting from treasury
+   * 
+   * CREATED → COMPLETED:
+   * 1. Checks sufficient funds in treasury
+   * 2. Creates payment and deducts amount
+   * 
+   * PENDING → COMPLETED:
+   * 1. Creates payment (amount already reserved)
+   * 2. Uses isFromPendingRequest flag to prevent double deduction
+   */
   updateStatus: async (id: string, status: PaymentRequestStatus) => {
     try {
       await runTransaction(db, async (transaction) => {
@@ -185,6 +248,28 @@ export const paymentRequestServices = {
     }
   },
 
+  /**
+   * Updates a payment request and adjusts treasury balances if needed
+   * @async
+   * @param {string} id - Payment request ID
+   * @param {Partial<PaymentRequest>} data - Updated request data
+   * @returns {Promise<PaymentRequest>} Updated payment request object
+   * @throws {Error} If:
+   *  - Request not found
+   *  - New amount is not positive
+   *  - Treasury category not found
+   *  - Insufficient funds in new category
+   *  - Transaction fails
+   * 
+   * @description
+   * This operation handles treasury balance adjustments for PENDING requests:
+   * 1. Returns reserved amount to current category
+   * 2. If changing category:
+   *    a. Verifies new category exists
+   *    b. Checks sufficient funds in new category
+   * 3. Reserves new amount from target category
+   * 4. Updates the request record
+   */
   update: async (id: string, data: Partial<PaymentRequest>): Promise<PaymentRequest> => {
     try {
       if (data.amount !== undefined && data.amount <= 0) {
@@ -247,16 +332,11 @@ export const paymentRequestServices = {
           ...data,
           updatedAt: Timestamp.now()
         };
-        
         transaction.update(docRef, updateData);
       });
 
       // Fetch and return updated request
       const updatedDoc = await getDoc(doc(db, PAYMENT_REQUESTS, id));
-      if (!updatedDoc.exists()) {
-        throw new Error('Failed to fetch updated request');
-      }
-
       return {
         id: updatedDoc.id,
         ...updatedDoc.data()
@@ -303,12 +383,19 @@ export const paymentRequestServices = {
   }
 };
 
+/**
+ * Validates if a status transition is allowed
+ * @private
+ * @param {PaymentRequestStatus} currentStatus - Current status of the request
+ * @param {PaymentRequestStatus} newStatus - Desired new status
+ * @returns {boolean} Whether the transition is valid
+ */
 function isValidStatusTransition(currentStatus: PaymentRequestStatus, newStatus: PaymentRequestStatus): boolean {
-  const validTransitions: Record<PaymentRequestStatus, PaymentRequestStatus[]> = {
+  const allowedTransitions: Record<PaymentRequestStatus, PaymentRequestStatus[]> = {
     'CREATED': ['PENDING', 'COMPLETED'],
     'PENDING': ['COMPLETED'],
     'COMPLETED': []
   };
 
-  return validTransitions[currentStatus]?.includes(newStatus) || false;
+  return allowedTransitions[currentStatus]?.includes(newStatus) || false;
 }

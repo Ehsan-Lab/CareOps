@@ -2,3 +2,4 @@ always think before action. be precise
 its preferable to implement unittest for the section you are working on.
 properly comment your algorithm and write cleancode
 think deeply when debugging before action
+when you debug and find you see that you need a tool to fix the issue, start implementing it and save it in tools folder and use virtual environment to use it.

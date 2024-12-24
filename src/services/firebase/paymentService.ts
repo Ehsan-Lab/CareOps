@@ -1,3 +1,9 @@
+/**
+ * @module PaymentService
+ * @description Service for managing payment processing and related treasury operations in Firestore
+ * Handles atomic transactions for payment creation, updates, cancellations, and deletions while maintaining treasury balances
+ */
+
 import { 
   collection, 
   doc,
@@ -13,14 +19,27 @@ import { db } from '../../config/firebase';
 import { Payment } from '../../types';
 import { COLLECTIONS } from './constants';
 
+/**
+ * @interface CreatePaymentData
+ * @description Data required to create a new payment, excluding system-managed fields
+ * @extends {Omit<Payment, 'id' | 'status' | 'createdAt' | 'updatedAt' | 'deletedAt' | 'deletedBy' | 'isDeleted'>}
+ */
 interface CreatePaymentData extends Omit<Payment, 'id' | 'status' | 'createdAt' | 'updatedAt' | 'deletedAt' | 'deletedBy' | 'isDeleted'> {
+  /** Flag indicating if the payment is created from a pending request (affects treasury balance check) */
   isFromPendingRequest?: boolean;
 }
 
-/*
-* Payment Services
-*/
+/**
+ * @namespace paymentServices
+ * @description Service object containing payment-related operations with treasury balance management
+ */
 export const paymentServices = {
+  /**
+   * Retrieves all non-deleted payments from the database
+   * @async
+   * @returns {Promise<Payment[]>} Array of active payment objects
+   * @throws {Error} If fetching payments fails
+   */
   getAll: async () => {
     try {
       const querySnapshot = await getDocs(
@@ -39,6 +58,26 @@ export const paymentServices = {
     }
   },
 
+  /**
+   * Creates a new payment and updates treasury balance if required
+   * @async
+   * @param {CreatePaymentData} data - Data for the new payment
+   * @returns {Promise<Payment | null>} Created payment object or null if creation fails
+   * @throws {Error} If:
+   *  - Amount is not positive
+   *  - Treasury category doesn't exist
+   *  - Insufficient funds in category (for non-pending requests)
+   *  - Transaction fails
+   * 
+   * @description
+   * This operation performs the following steps atomically:
+   * 1. Validates the payment amount
+   * 2. Verifies the treasury category exists
+   * 3. If not from pending request:
+   *    a. Checks sufficient funds in category
+   *    b. Updates treasury balance
+   * 4. Creates the payment record with COMPLETED status
+   */
   create: async (data: CreatePaymentData) => {
     try {
       if (data.amount <= 0) {
@@ -93,6 +132,28 @@ export const paymentServices = {
     }
   },
 
+  /**
+   * Updates a payment and adjusts treasury balances if amount or category changes
+   * @async
+   * @param {string} id - Payment ID
+   * @param {Partial<Payment>} data - Updated payment data
+   * @throws {Error} If:
+   *  - Payment not found
+   *  - New amount is not positive
+   *  - Original/new treasury category not found
+   *  - Insufficient funds in new category
+   *  - Transaction fails
+   * 
+   * @description
+   * This operation performs the following steps atomically when amount or category changes:
+   * 1. Validates the new amount if provided
+   * 2. Retrieves and validates the original payment
+   * 3. If amount/category changed:
+   *    a. Returns original amount to original category
+   *    b. Checks sufficient funds in new category
+   *    c. Deducts new amount from new category
+   * 4. Updates the payment record
+   */
   update: async (id: string, data: Partial<Payment>) => {
     try {
       if (data.amount !== undefined && data.amount <= 0) {
@@ -158,6 +219,23 @@ export const paymentServices = {
     }
   },
 
+  /**
+   * Cancels a payment and refunds the amount to treasury
+   * @async
+   * @param {string} id - Payment ID
+   * @throws {Error} If:
+   *  - Payment not found
+   *  - Payment already cancelled
+   *  - Treasury category not found
+   *  - Transaction fails
+   * 
+   * @description
+   * This operation performs the following steps atomically:
+   * 1. Retrieves and validates the payment
+   * 2. Verifies payment is not already cancelled
+   * 3. Updates payment status to CANCELLED
+   * 4. Refunds the amount to treasury category
+   */
   cancel: async (id: string) => {
     try {
       await runTransaction(db, async (transaction) => {
@@ -201,6 +279,26 @@ export const paymentServices = {
     }
   },
 
+  /**
+   * Soft deletes a payment and refunds the amount to treasury if completed
+   * @async
+   * @param {string} id - Payment ID
+   * @param {string} userId - ID of user performing the deletion
+   * @throws {Error} If:
+   *  - Payment not found
+   *  - Payment already deleted
+   *  - Payment is cancelled
+   *  - Treasury category not found
+   *  - Transaction fails
+   * 
+   * @description
+   * This operation performs the following steps atomically:
+   * 1. Retrieves and validates the payment
+   * 2. Verifies payment can be deleted
+   * 3. If payment was COMPLETED:
+   *    a. Refunds amount to treasury category
+   * 4. Soft deletes the payment with audit trail
+   */
   delete: async (id: string, userId: string) => {
     try {
       await runTransaction(db, async (transaction) => {
