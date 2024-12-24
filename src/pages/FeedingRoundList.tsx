@@ -9,7 +9,7 @@ import { format } from 'date-fns';
 import { FeedingRound } from '../types';
 
 const FeedingRoundList: React.FC = () => {
-  const { feedingRounds = [] } = useFirebaseQuery();
+  const { feedingRounds = [], isLoading, error } = useFirebaseQuery();
   const [isModalOpen, setIsModalOpen] = React.useState(false);
   const [isPhotosModalOpen, setIsPhotosModalOpen] = React.useState(false);
   const [selectedRound, setSelectedRound] = React.useState<FeedingRound | null>(null);
@@ -17,6 +17,58 @@ const FeedingRoundList: React.FC = () => {
   const [sortField, setSortField] = useState<'date' | 'allocatedAmount' | 'unitPrice' | 'units'>('date');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const queryClient = useQueryClient();
+
+  // Validate and transform feeding rounds data
+  const validFeedingRounds = React.useMemo(() => {
+    return feedingRounds?.filter(round => round && typeof round === 'object') ?? [];
+  }, [feedingRounds]);
+
+  const sortedRounds = React.useMemo(() => {
+    if (!validFeedingRounds.length) return [];
+    
+    return [...validFeedingRounds].sort((a, b) => {
+      let comparison = 0;
+      switch (sortField) {
+        case 'date':
+          comparison = new Date(a.date).getTime() - new Date(b.date).getTime();
+          break;
+        case 'allocatedAmount':
+          const amountA = typeof a.allocatedAmount === 'number' ? a.allocatedAmount : 0;
+          const amountB = typeof b.allocatedAmount === 'number' ? b.allocatedAmount : 0;
+          comparison = amountA - amountB;
+          break;
+        case 'unitPrice':
+          const priceA = typeof a.unitPrice === 'number' ? a.unitPrice : 0;
+          const priceB = typeof b.unitPrice === 'number' ? b.unitPrice : 0;
+          comparison = priceA - priceB;
+          break;
+        case 'units':
+          const unitsA = (typeof a.unitPrice === 'number' && a.unitPrice > 0) ? 
+            (typeof a.allocatedAmount === 'number' ? a.allocatedAmount / a.unitPrice : 0) : 0;
+          const unitsB = (typeof b.unitPrice === 'number' && b.unitPrice > 0) ? 
+            (typeof b.allocatedAmount === 'number' ? b.allocatedAmount / b.unitPrice : 0) : 0;
+          comparison = unitsA - unitsB;
+          break;
+      }
+      return sortDirection === 'asc' ? comparison : -comparison;
+    });
+  }, [validFeedingRounds, sortField, sortDirection]);
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center items-center min-h-screen">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-600"></div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-4 text-red-600">
+        Error loading feeding rounds. Please try again later.
+      </div>
+    );
+  }
 
   const handleEdit = (round: FeedingRound) => {
     setSelectedRound(round);
@@ -37,8 +89,20 @@ const FeedingRoundList: React.FC = () => {
     if (window.confirm('Are you sure you want to delete this feeding round?')) {
       try {
         await feedingRoundServices.delete(id);
-        queryClient.invalidateQueries({ queryKey: ['feedingRounds'] });
-        queryClient.invalidateQueries({ queryKey: ['treasury'] });
+        // Invalidate and refetch all relevant queries
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ['feedingRounds'] }),
+          queryClient.invalidateQueries({ queryKey: ['treasury'] }),
+          queryClient.invalidateQueries({ queryKey: ['all-data'] }),
+          queryClient.refetchQueries({ queryKey: ['feedingRounds'] }),
+          queryClient.refetchQueries({ queryKey: ['treasury'] }),
+          queryClient.refetchQueries({ queryKey: ['all-data'] })
+        ]);
+
+        // Update local state to remove the deleted round
+        const updatedRounds = validFeedingRounds.filter(round => round.id !== id);
+        // Force a re-render by updating the state
+        setExpandedId(null);
       } catch (error) {
         console.error('Error deleting feeding round:', error);
         alert('Failed to delete feeding round');
@@ -59,29 +123,6 @@ const FeedingRoundList: React.FC = () => {
       setSortDirection('asc');
     }
   };
-
-  const sortedRounds = React.useMemo(() => {
-    return [...feedingRounds].sort((a, b) => {
-      let comparison = 0;
-      switch (sortField) {
-        case 'date':
-          comparison = new Date(a.date).getTime() - new Date(b.date).getTime();
-          break;
-        case 'allocatedAmount':
-          comparison = a.allocatedAmount - b.allocatedAmount;
-          break;
-        case 'unitPrice':
-          comparison = (a.unitPrice || 0) - (b.unitPrice || 0);
-          break;
-        case 'units':
-          const unitsA = a.unitPrice ? a.allocatedAmount / a.unitPrice : 0;
-          const unitsB = b.unitPrice ? b.allocatedAmount / b.unitPrice : 0;
-          comparison = unitsA - unitsB;
-          break;
-      }
-      return sortDirection === 'asc' ? comparison : -comparison;
-    });
-  }, [feedingRounds, sortField, sortDirection]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -181,7 +222,10 @@ const FeedingRoundList: React.FC = () => {
                 </thead>
                 <tbody className="divide-y divide-gray-200 bg-white">
                   {sortedRounds.map((round) => {
-                    const units = round.unitPrice ? round.allocatedAmount / round.unitPrice : 0;
+                    if (!round || typeof round !== 'object') return null;
+
+                    const units = (typeof round.unitPrice === 'number' && round.unitPrice > 0) ? 
+                      (typeof round.allocatedAmount === 'number' ? round.allocatedAmount / round.unitPrice : 0) : 0;
                     const isExpanded = expandedId === round.id;
 
                     return (
@@ -191,13 +235,13 @@ const FeedingRoundList: React.FC = () => {
                             {format(new Date(round.date), 'MMM d, yyyy')}
                           </td>
                           <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                            ${round.allocatedAmount.toFixed(2)}
+                            ${typeof round.allocatedAmount === 'number' ? round.allocatedAmount.toFixed(2) : '0.00'}
                           </td>
                           <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                            ${round.unitPrice?.toFixed(2) || 'N/A'}
+                            {typeof round.unitPrice === 'number' ? `$${round.unitPrice.toFixed(2)}` : 'N/A'}
                           </td>
                           <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                            {units.toFixed(2)}
+                            {units > 0 ? units.toFixed(2) : 'N/A'}
                           </td>
                           <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                             <span className={`inline-flex rounded-full px-2 text-xs font-semibold leading-5 ${getStatusColor(round.status)}`}>

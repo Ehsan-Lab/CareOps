@@ -5,6 +5,8 @@ import { feedingRoundServices } from '../../services/firebase/feedingRoundServic
 import { useQueryClient } from '@tanstack/react-query';
 import { useStore } from '../../store';
 import { FeedingRound } from '../../types';
+import { useNavigate } from 'react-router-dom';
+import { Alert } from '@mui/material';
 
 interface FeedingRoundModalProps {
   isOpen: boolean;
@@ -28,6 +30,9 @@ export const FeedingRoundModal: React.FC<FeedingRoundModalProps> = ({
   round 
 }) => {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const [submitError, setSubmitError] = React.useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = React.useState(false);
   const { treasuryCategories, setFeedingRounds, feedingRounds } = useStore();
   const feedingCategory = treasuryCategories.find(c => c.name.toLowerCase() === 'feeding');
   
@@ -81,9 +86,12 @@ export const FeedingRoundModal: React.FC<FeedingRoundModalProps> = ({
 
   const onSubmit = async (data: FeedingRoundFormData) => {
     if (!feedingCategory) {
-      alert('Feeding category not found');
+      setSubmitError('Feeding category not found');
       return;
     }
+
+    setIsSubmitting(true);
+    setSubmitError(null);
 
     try {
       const formattedData = {
@@ -110,12 +118,18 @@ export const FeedingRoundModal: React.FC<FeedingRoundModalProps> = ({
         });
         setFeedingRounds([...feedingRounds, newRound]);
       }
-      queryClient.invalidateQueries({ queryKey: ['all-data'] });
+      
+      await queryClient.invalidateQueries({ queryKey: ['all-data'] });
+      await queryClient.refetchQueries({ queryKey: ['all-data'] });
+      
       reset();
       onClose();
+      navigate('/feeding-rounds');
     } catch (error) {
       console.error('Error saving feeding round:', error);
-      alert(error instanceof Error ? error.message : 'Failed to save feeding round');
+      setSubmitError(error instanceof Error ? error.message : 'Failed to save feeding round');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -131,10 +145,20 @@ export const FeedingRoundModal: React.FC<FeedingRoundModalProps> = ({
             <h3 className="text-lg font-medium">
               {round ? 'Edit' : 'New'} Feeding Round
             </h3>
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-500">
+            <button 
+              onClick={onClose} 
+              className="text-gray-400 hover:text-gray-500"
+              title="Close modal"
+            >
               <X className="h-5 w-5" />
             </button>
           </div>
+
+          {submitError && (
+            <Alert severity="error" className="mb-4">
+              {submitError}
+            </Alert>
+          )}
 
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
@@ -248,14 +272,16 @@ export const FeedingRoundModal: React.FC<FeedingRoundModalProps> = ({
                 type="button"
                 onClick={onClose}
                 className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                disabled={isSubmitting}
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+                className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                disabled={isSubmitting}
               >
-                {round ? 'Update' : 'Create'} Round
+                {isSubmitting ? 'Saving...' : round ? 'Update' : 'Create'} Round
               </button>
             </div>
           </form>

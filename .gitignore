@@ -26,3 +26,5 @@ dist-ssr
 # envireonment files
 .env
 .env.production
+
+/coverage
