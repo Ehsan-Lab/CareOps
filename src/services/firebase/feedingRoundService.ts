@@ -22,6 +22,8 @@ import {
 import { db } from '../../config/firebase';
 import { FeedingRound } from '../../types';
 import { COLLECTIONS } from './constants';
+import { format } from 'date-fns';
+import { transactionServices } from '../transactionService';
 
 const MAX_RETRY_ATTEMPTS = 3;
 const BATCH_SIZE = 10;
@@ -72,10 +74,13 @@ export const feedingRoundServices = {
    * @param {number} pageSize - Number of items per page
    * @param {DocumentSnapshot} [startAfterDoc] - Document to start after for pagination
    * @param {string} [status] - Optional status filter
-   * @returns {Promise<{rounds: FeedingRound[], lastDoc: DocumentSnapshot}>} Paginated feeding rounds and last document
+   * @returns {Promise<{rounds: FeedingRound[], lastDoc: DocumentSnapshot | null}>} Paginated feeding rounds and last document
    * @throws {Error} If fetching rounds fails
    */
-  getAll: async (pageSize: number = BATCH_SIZE, startAfterDoc?: DocumentSnapshot, status?: string) => {
+  getAll: async (pageSize: number = BATCH_SIZE, startAfterDoc?: DocumentSnapshot, status?: string): Promise<{
+    rounds: FeedingRound[];
+    lastDoc: DocumentSnapshot | null;
+  }> => {
     try {
       let q = query(
         collection(db, COLLECTIONS.FEEDING_ROUNDS),
@@ -100,7 +105,7 @@ export const feedingRoundServices = {
 
       return {
         rounds,
-        lastDoc: querySnapshot.docs[querySnapshot.docs.length - 1]
+        lastDoc: querySnapshot.docs[querySnapshot.docs.length - 1] || null
       };
     } catch (error) {
       console.error('Error fetching feeding rounds:', error);
@@ -127,7 +132,7 @@ export const feedingRoundServices = {
   create: async (data: Omit<FeedingRound, 'id'>) => {
     return retryOperation(async () => {
       try {
-        await runTransaction(db, async (transaction) => {
+        const result = await runTransaction(db, async (transaction) => {
           const categoryRef = doc(db, COLLECTIONS.TREASURY, data.categoryId);
           const categoryDoc = await transaction.get(categoryRef);
           
@@ -141,19 +146,31 @@ export const feedingRoundServices = {
           }
 
           const roundRef = doc(collection(db, COLLECTIONS.FEEDING_ROUNDS));
-          transaction.set(roundRef, {
+          const roundData = {
             ...data,
             createdAt: Timestamp.now(),
             updatedAt: Timestamp.now()
-          });
+          };
+          transaction.set(roundRef, roundData);
 
           transaction.update(categoryRef, {
             balance: currentBalance - data.allocatedAmount,
             updatedAt: Timestamp.now()
           });
 
-          return { id: roundRef.id, ...data };
+          return { id: roundRef.id, ...roundData };
         });
+
+        // Record the transaction
+        await transactionServices.recordTransaction({
+          type: 'DEBIT',
+          amount: data.allocatedAmount,
+          description: `Feeding round allocation for ${format(new Date(data.date), 'MMM d, yyyy')}`,
+          category: 'FEEDING_ROUND',
+          reference: result.id
+        });
+
+        return result;
       } catch (error) {
         console.error('Error creating feeding round:', error);
         throw new Error(`Failed to create feeding round: ${error.message}`);

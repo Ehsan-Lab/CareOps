@@ -15,7 +15,7 @@ export const COLLECTIONS = {
   /** Collection for storing donation records */
   DONATIONS: 'donations',
   /** Collection for storing feeding round events */
-  FEEDING_ROUNDS: 'feedingRounds',
+  FEEDING_ROUNDS: 'feeding-rounds',
   /** Collection for storing treasury categories and balances */
   TREASURY: 'treasury',
   /** Collection for storing beneficiary information */
@@ -23,5 +23,7 @@ export const COLLECTIONS = {
   /** Collection for storing payment records */
   PAYMENTS: 'payments',
   /** Collection for storing payment request records */
-  PAYMENT_REQUESTS: 'paymentRequests'
+  PAYMENT_REQUESTS: 'payment-requests',
+  /** Collection for storing transactions */
+  TRANSACTIONS: 'transactions'
 } as const;

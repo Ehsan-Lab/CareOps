@@ -8,16 +8,15 @@ import {
   collection, 
   doc,
   getDocs, 
-  updateDoc, 
+  addDoc, 
   Timestamp,
   runTransaction,
-  getDoc,
   query,
   where
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
-import { Payment } from '../../types';
 import { COLLECTIONS } from './constants';
+import { transactionServices } from './transactionService';
 
 /**
  * @interface CreatePaymentData
@@ -42,16 +41,11 @@ export const paymentServices = {
    */
   getAll: async () => {
     try {
-      const querySnapshot = await getDocs(
-        query(
-          collection(db, COLLECTIONS.PAYMENTS),
-          where('isDeleted', 'in', [false, null])
-        )
-      );
+      const querySnapshot = await getDocs(collection(db, COLLECTIONS.PAYMENTS));
       return querySnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
-      })) as Payment[];
+      }));
     } catch (error) {
       console.error('Error fetching payments:', error);
       throw error;
@@ -78,16 +72,20 @@ export const paymentServices = {
    *    b. Updates treasury balance
    * 4. Creates the payment record with COMPLETED status
    */
-  create: async (data: CreatePaymentData) => {
+  create: async (data: any) => {
     try {
-      if (data.amount <= 0) {
-        throw new Error('Amount must be greater than 0');
-      }
+      const result = await runTransaction(db, async (transaction) => {
+        // Create the payment
+        const paymentRef = doc(collection(db, COLLECTIONS.PAYMENTS));
+        const paymentData = {
+          ...data,
+          status: 'COMPLETED',
+          createdAt: Timestamp.now(),
+          updatedAt: Timestamp.now()
+        };
+        transaction.set(paymentRef, paymentData);
 
-      let createdPayment: Payment | null = null;
-
-      await runTransaction(db, async (transaction) => {
-        // Check treasury balance
+        // Update treasury balance
         const categoryRef = doc(db, COLLECTIONS.TREASURY, data.categoryId);
         const categoryDoc = await transaction.get(categoryRef);
         
@@ -96,36 +94,24 @@ export const paymentServices = {
         }
 
         const currentBalance = categoryDoc.data().balance || 0;
-
-        // Only check and deduct balance if not from a pending request
-        if (!data.isFromPendingRequest) {
-          if (currentBalance < data.amount) {
-            throw new Error('Insufficient funds in category');
-          }
-
-          // Update treasury balance
-          transaction.update(categoryRef, {
-            balance: currentBalance - data.amount,
-            updatedAt: Timestamp.now()
-          });
-        }
-
-        // Create payment
-        const paymentRef = doc(collection(db, COLLECTIONS.PAYMENTS));
-        const paymentData = {
-          ...data,
-          id: paymentRef.id,
-          status: 'COMPLETED',
-          isDeleted: false,
-          createdAt: Timestamp.now(),
+        transaction.update(categoryRef, {
+          balance: currentBalance - data.amount,
           updatedAt: Timestamp.now()
-        };
+        });
 
-        transaction.set(paymentRef, paymentData);
-        createdPayment = paymentData as Payment;
+        return { id: paymentRef.id, ...paymentData };
       });
 
-      return createdPayment;
+      // Record the transaction
+      await transactionServices.recordTransaction({
+        type: 'DEBIT',
+        amount: data.amount,
+        description: `Payment to ${data.beneficiaryName || 'Beneficiary'}`,
+        category: 'PAYMENT',
+        reference: result.id
+      });
+
+      return result;
     } catch (error) {
       console.error('Error creating payment:', error);
       throw error;
@@ -349,6 +335,23 @@ export const paymentServices = {
       });
     } catch (error) {
       console.error('Error deleting payment:', error);
+      throw error;
+    }
+  },
+
+  getByBeneficiary: async (beneficiaryId: string) => {
+    try {
+      const q = query(
+        collection(db, COLLECTIONS.PAYMENTS),
+        where('beneficiaryId', '==', beneficiaryId)
+      );
+      const querySnapshot = await getDocs(q);
+      return querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+    } catch (error) {
+      console.error('Error fetching beneficiary payments:', error);
       throw error;
     }
   }

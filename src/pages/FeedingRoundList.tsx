@@ -4,10 +4,15 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useFirebaseQuery } from '../hooks/useFirebaseQuery';
 import { FeedingRoundModal } from '../components/modals/FeedingRoundModal';
 import { FeedingRoundPhotosModal } from '../components/modals/FeedingRoundPhotosModal';
-import { feedingRoundServices } from '../services/firebase';
+import { feedingRoundServices } from '../services/firebase/feedingRoundService';
 import { format } from 'date-fns';
 import { FeedingRound } from '../types';
 import { DocumentSnapshot } from 'firebase/firestore';
+
+interface PaginatedFeedingRounds {
+  rounds: FeedingRound[];
+  lastDoc: DocumentSnapshot | null;
+}
 
 const FeedingRoundList: React.FC = () => {
   const { feedingRounds = { rounds: [], lastDoc: null }, isLoading, error } = useFirebaseQuery();
@@ -73,18 +78,22 @@ const FeedingRoundList: React.FC = () => {
 
     try {
       const result = await feedingRoundServices.getAll(10, lastDoc);
-      const newRounds = result.rounds;
       
       // Update the query cache with the combined results
-      queryClient.setQueryData(['feedingRounds'], (oldData: any) => ({
-        rounds: [...(oldData?.rounds || []), ...newRounds],
+      queryClient.setQueryData<PaginatedFeedingRounds>(['feedingRounds'], (oldData) => ({
+        rounds: [...(oldData?.rounds || []), ...result.rounds],
         lastDoc: result.lastDoc
       }));
 
-      setLastDoc(result.lastDoc);
-      setHasMore(newRounds.length === 10);
+      if (result.lastDoc) {
+        setLastDoc(result.lastDoc);
+        setHasMore(result.rounds.length === 10);
+      } else {
+        setHasMore(false);
+      }
     } catch (error) {
       console.error('Error loading more rounds:', error);
+      setHasMore(false);
     }
   };
 
