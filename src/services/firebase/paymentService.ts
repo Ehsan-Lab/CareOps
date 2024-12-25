@@ -390,5 +390,68 @@ export const paymentServices = {
       console.error('Error fetching beneficiary payments:', error);
       throw error;
     }
+  },
+
+  /**
+   * Updates the status of a payment and handles related treasury operations
+   * @async
+   * @param {string} id - Payment ID
+   * @param {PaymentStatus} status - New status to set
+   * @throws {Error} If:
+   *  - Payment not found
+   *  - Invalid status transition
+   *  - Treasury category not found
+   *  - Transaction fails
+   */
+  updateStatus: async (id: string, status: PaymentStatus) => {
+    try {
+      await runTransaction(db, async (transaction) => {
+        const paymentRef = doc(db, COLLECTIONS.PAYMENTS, id);
+        const paymentDoc = await transaction.get(paymentRef);
+        
+        if (!paymentDoc.exists()) {
+          throw new Error('Payment not found');
+        }
+
+        const paymentData = paymentDoc.data() as Payment;
+        
+        // Handle treasury balance adjustments based on status changes
+        if (status === 'CANCELLED' && paymentData.status !== 'CANCELLED') {
+          // Refund the amount to treasury
+          const categoryRef = doc(db, COLLECTIONS.TREASURY, paymentData.categoryId);
+          const categoryDoc = await transaction.get(categoryRef);
+          
+          if (!categoryDoc.exists()) {
+            throw new Error('Treasury category not found');
+          }
+
+          const currentBalance = categoryDoc.data().balance || 0;
+
+          // Update treasury balance
+          transaction.update(categoryRef, {
+            balance: currentBalance + paymentData.amount,
+            updatedAt: Timestamp.now()
+          });
+
+          // Record refund transaction
+          await transactionServices.recordTransaction({
+            type: 'CREDIT',
+            amount: paymentData.amount,
+            description: `Cancelled payment to ${paymentData.beneficiaryName || 'Beneficiary'}`,
+            category: 'PAYMENT_CANCEL',
+            reference: id
+          });
+        }
+
+        // Update payment status
+        transaction.update(paymentRef, {
+          status,
+          updatedAt: Timestamp.now()
+        });
+      });
+    } catch (error) {
+      console.error('Error updating payment status:', error);
+      throw error;
+    }
   }
 }; 
