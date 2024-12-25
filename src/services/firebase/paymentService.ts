@@ -94,6 +94,10 @@ export const paymentServices = {
         }
 
         const currentBalance = categoryDoc.data().balance || 0;
+        if (currentBalance < data.amount) {
+          throw new Error('Insufficient funds in category');
+        }
+
         transaction.update(categoryRef, {
           balance: currentBalance - data.amount,
           updatedAt: Timestamp.now()
@@ -106,7 +110,7 @@ export const paymentServices = {
       await transactionServices.recordTransaction({
         type: 'DEBIT',
         amount: data.amount,
-        description: `Payment to ${data.beneficiaryName || 'Beneficiary'}`,
+        description: `Payment to ${data.beneficiaryName || 'Beneficiary'} - ${data.paymentType || 'One-time payment'}`,
         category: 'PAYMENT',
         reference: result.id
       });
@@ -146,7 +150,7 @@ export const paymentServices = {
         throw new Error('Amount must be greater than 0');
       }
 
-      await runTransaction(db, async (transaction) => {
+      const result = await runTransaction(db, async (transaction) => {
         const paymentRef = doc(db, COLLECTIONS.PAYMENTS, id);
         const paymentDoc = await transaction.get(paymentRef);
         
@@ -171,6 +175,15 @@ export const paymentServices = {
             updatedAt: Timestamp.now()
           });
 
+          // Record refund transaction
+          await transactionServices.recordTransaction({
+            type: 'CREDIT',
+            amount: currentPayment.amount,
+            description: `Reversed payment to ${currentPayment.beneficiaryName || 'Beneficiary'} - Update`,
+            category: 'PAYMENT_UPDATE',
+            reference: id
+          });
+
           // Deduct from new/current category
           const newCategoryId = data.categoryId || currentPayment.categoryId;
           const newCategoryRef = doc(db, COLLECTIONS.TREASURY, newCategoryId);
@@ -191,14 +204,28 @@ export const paymentServices = {
             balance: newBalance - newAmount,
             updatedAt: Timestamp.now()
           });
+
+          // Record new payment transaction
+          await transactionServices.recordTransaction({
+            type: 'DEBIT',
+            amount: newAmount,
+            description: `Updated payment to ${data.beneficiaryName || currentPayment.beneficiaryName || 'Beneficiary'}`,
+            category: 'PAYMENT_UPDATE',
+            reference: id
+          });
         }
 
         // Update payment
-        transaction.update(paymentRef, {
+        const updatedData = {
           ...data,
           updatedAt: Timestamp.now()
-        });
+        };
+        transaction.update(paymentRef, updatedData);
+
+        return { id, ...currentPayment, ...updatedData };
       });
+
+      return result;
     } catch (error) {
       console.error('Error updating payment:', error);
       throw error;
@@ -257,6 +284,15 @@ export const paymentServices = {
         transaction.update(categoryRef, {
           balance: currentBalance + paymentData.amount,
           updatedAt: Timestamp.now()
+        });
+
+        // Record the refund transaction
+        await transactionServices.recordTransaction({
+          type: 'CREDIT',
+          amount: paymentData.amount,
+          description: `Cancelled payment to ${paymentData.beneficiaryName || 'Beneficiary'}`,
+          category: 'PAYMENT_CANCEL',
+          reference: id
         });
       });
     } catch (error) {
