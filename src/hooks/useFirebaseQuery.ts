@@ -15,6 +15,7 @@ import {
 } from '../config/firebase';
 import { useStore } from '../store';
 import { DocumentSnapshot } from 'firebase/firestore';
+import { transactionServices } from '../services/firebase/transactionService';
 
 interface PaginatedFeedingRounds {
   rounds: any[];
@@ -78,7 +79,8 @@ export const useFirebaseQuery = () => {
           feedingRoundsData,
           treasuryCategoriesData,
           paymentsData,
-          paymentRequestsData
+          paymentRequestsData,
+          transactionsData
         ] = await Promise.all([
           beneficiaryServices.getAll(),
           donorServices.getAll(),
@@ -86,7 +88,8 @@ export const useFirebaseQuery = () => {
           feedingRoundServices.getAll(10), // Get first page of feeding rounds
           treasuryServices.getAll(),
           paymentServices.getAll(),
-          paymentRequestServices.getAll()
+          paymentRequestServices.getAll(),
+          transactionServices.getAll()
         ]);
 
         setBeneficiaries(beneficiariesData);
@@ -104,7 +107,8 @@ export const useFirebaseQuery = () => {
           feedingRounds: feedingRoundsData as PaginatedFeedingRounds,
           treasuryCategories: treasuryCategoriesData,
           payments: paymentsData,
-          paymentRequests: paymentRequestsData
+          paymentRequests: paymentRequestsData,
+          transactions: transactionsData
         };
       } catch (error) {
         console.error('Error fetching data:', error);
@@ -128,6 +132,7 @@ export const useFirebaseQuery = () => {
     feedingRounds,
     treasuryCategories,
     payments,
-    paymentRequests
+    paymentRequests,
+    transactions: dataError?.transactions
   };
 };

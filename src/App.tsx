@@ -18,6 +18,7 @@ import TreasuryList from './pages/TreasuryList';
 import DonationList from './pages/DonationList';
 import TreasuryCategoryList from './pages/TreasuryCategories';
 import Dashboard from './pages/Dashboard';
+import TransactionsList from './pages/TransactionsList';
 
 /**
  * @constant
@@ -48,6 +49,7 @@ function AppContent() {
         <Route path="payments" element={<PaymentList />} />
         <Route path="feeding-rounds" element={<FeedingRoundList />} />
         <Route path="treasury" element={<TreasuryList />} />
+        <Route path="transactions" element={<TransactionsList />} />
         {/* <Route path="treasury-categories" element={<TreasuryCategoryList />} /> */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

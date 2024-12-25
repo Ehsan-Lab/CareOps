@@ -13,9 +13,15 @@ import {
 import { format, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
 import { useFirebaseQuery } from '../hooks/useFirebaseQuery';
 import { Donation, FeedingRound, Beneficiary } from '../types';
+import { DocumentSnapshot } from 'firebase/firestore';
 
 // Chart colors
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042'];
+
+interface PaginatedFeedingRounds {
+  rounds: FeedingRound[];
+  lastDoc: DocumentSnapshot | null;
+}
 
 /**
  * @component
@@ -35,7 +41,7 @@ const Dashboard: React.FC = () => {
 
   // Calculate statistics and prepare chart data
   const stats = useMemo(() => {
-    if (!donors || !donations || !feedingRounds || !beneficiaries) {
+    if (!donors || !donations || !feedingRounds?.rounds || !beneficiaries) {
       return null;
     }
 
@@ -59,8 +65,8 @@ const Dashboard: React.FC = () => {
     const activeBeneficiaries = beneficiaries.filter(b => b.status === 'ACTIVE').length;
 
     // Completed feeding rounds this month
-    const completedFeedingRounds = feedingRounds.filter(
-      fr => fr.status === 'COMPLETED' && 
+    const completedFeedingRounds = feedingRounds.rounds.filter(
+      (fr: FeedingRound) => fr.status === 'COMPLETED' && 
       isWithinInterval(new Date(fr.date), { start: monthStart, end: monthEnd })
     ).length;
 
@@ -72,9 +78,9 @@ const Dashboard: React.FC = () => {
       totalDonations: donations.reduce((sum, d) => sum + d.amount, 0),
       donationsThisMonth,
       completedFeedingRounds,
-      upcomingFeedingRounds: feedingRounds.filter(fr => fr.status === 'PENDING').length
+      upcomingFeedingRounds: feedingRounds.rounds.filter((fr: FeedingRound) => fr.status === 'PENDING').length
     };
-  }, [donors, donations, feedingRounds, beneficiaries]);
+  }, [donors, donations, feedingRounds?.rounds, beneficiaries]);
 
   // Prepare monthly donations chart data
   const monthlyDonationsData = useMemo(() => {

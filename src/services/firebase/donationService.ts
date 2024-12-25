@@ -8,14 +8,13 @@ import {
   collection, 
   doc,
   getDocs, 
+  addDoc, 
   Timestamp,
-  runTransaction,
-  getDoc,
-  updateDoc
+  runTransaction
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
-import { Donation } from '../../types';
 import { COLLECTIONS } from './constants';
+import { transactionServices } from './transactionService';
 
 /**
  * @interface CreateDonationData
@@ -51,7 +50,7 @@ export const donationServices = {
       return querySnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
-      })) as Donation[];
+      }));
     } catch (error) {
       console.error('Error fetching donations:', error);
       throw error;
@@ -74,15 +73,20 @@ export const donationServices = {
    * 3. Creates the donation record
    * 4. Updates the treasury category balance
    */
-  create: async (data: CreateDonationData) => {
+  create: async (data: any) => {
     try {
-      if (data.amount <= 0) {
-        throw new Error('Amount must be greater than 0');
-      }
+      const result = await runTransaction(db, async (transaction) => {
+        // Create the donation
+        const donationRef = doc(collection(db, COLLECTIONS.DONATIONS));
+        const donationData = {
+          ...data,
+          createdAt: Timestamp.now(),
+          updatedAt: Timestamp.now()
+        };
+        transaction.set(donationRef, donationData);
 
-      await runTransaction(db, async (transaction) => {
-        // First, do all reads
-        const categoryRef = doc(db, COLLECTIONS.TREASURY, String(data.categoryId));
+        // Update treasury balance
+        const categoryRef = doc(db, COLLECTIONS.TREASURY, data.categoryId);
         const categoryDoc = await transaction.get(categoryRef);
         
         if (!categoryDoc.exists()) {
@@ -90,26 +94,24 @@ export const donationServices = {
         }
 
         const currentBalance = categoryDoc.data().balance || 0;
-
-        // Then, do all writes
-        // 1. Create donation
-        const donationRef = doc(collection(db, COLLECTIONS.DONATIONS));
-        transaction.set(donationRef, {
-          donorId: String(data.donorId),
-          amount: Number(data.amount),
-          purpose: data.purpose,
-          categoryId: String(data.categoryId),
-          date: data.date,
-          createdAt: Timestamp.now(),
-          updatedAt: Timestamp.now()
-        });
-
-        // 2. Update treasury balance
         transaction.update(categoryRef, {
-          balance: currentBalance + Number(data.amount),
+          balance: currentBalance + data.amount,
           updatedAt: Timestamp.now()
         });
+
+        return { id: donationRef.id, ...donationData };
       });
+
+      // Record the transaction
+      await transactionServices.recordTransaction({
+        type: 'CREDIT',
+        amount: data.amount,
+        description: `Donation from ${data.donorName || 'Anonymous'}`,
+        category: 'DONATION',
+        reference: result.id
+      });
+
+      return result;
     } catch (error) {
       console.error('Error creating donation:', error);
       throw error;

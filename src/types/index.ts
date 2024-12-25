@@ -154,3 +154,16 @@ export interface Payment {
   /** Timestamp of when the record was last updated */
   updatedAt?: Timestamp;
 }
+
+export interface Transaction {
+  id: string;
+  type: 'CREDIT' | 'DEBIT';
+  amount: number;
+  description: string;
+  category: string;
+  date: string;
+  reference: string;
+  status: 'COMPLETED' | 'PENDING' | 'FAILED';
+  createdAt?: any;
+  updatedAt?: any;
+}
