@@ -14,6 +14,12 @@ import {
   removeConnectionStateListener 
 } from '../config/firebase';
 import { useStore } from '../store';
+import { DocumentSnapshot } from 'firebase/firestore';
+
+interface PaginatedFeedingRounds {
+  rounds: any[];
+  lastDoc: DocumentSnapshot | null;
+}
 
 export const useFirebaseQuery = () => {
   const { 
@@ -77,13 +83,11 @@ export const useFirebaseQuery = () => {
           beneficiaryServices.getAll(),
           donorServices.getAll(),
           donationServices.getAll(),
-          feedingRoundServices.getAll(),
+          feedingRoundServices.getAll(10), // Get first page of feeding rounds
           treasuryServices.getAll(),
           paymentServices.getAll(),
           paymentRequestServices.getAll()
         ]);
-
-        console.log('Fetched payments:', paymentsData);
 
         setBeneficiaries(beneficiariesData);
         setDonors(donorsData);
@@ -97,7 +101,7 @@ export const useFirebaseQuery = () => {
           beneficiaries: beneficiariesData,
           donors: donorsData,
           donations: donationsData,
-          feedingRounds: feedingRoundsData,
+          feedingRounds: feedingRoundsData as PaginatedFeedingRounds,
           treasuryCategories: treasuryCategoriesData,
           payments: paymentsData,
           paymentRequests: paymentRequestsData
@@ -107,13 +111,12 @@ export const useFirebaseQuery = () => {
         throw error;
       }
     },
-    enabled: !isValidating,
     retry: 3,
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000),
-    staleTime: 5000, // Data becomes stale after 5 seconds
-    cacheTime: 30000, // Cache data for 30 seconds
-    refetchOnWindowFocus: true, // Refetch when window regains focus
-    refetchOnMount: true // Refetch when component mounts
+    staleTime: 5000,
+    cacheTime: 30000,
+    refetchOnWindowFocus: true,
+    refetchOnMount: true
   });
 
   return {

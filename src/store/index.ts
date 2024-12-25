@@ -6,6 +6,7 @@
 import { create } from 'zustand';
 import { Donor, Donation, FeedingRound, TreasuryCategory, Beneficiary, Payment } from '../types';
 import { PaymentRequest } from '../types/paymentRequest';
+import { DocumentSnapshot } from 'firebase/firestore';
 
 /**
  * @interface AppState
@@ -70,24 +71,46 @@ interface AppState {
   setPaymentRequests: (requests: PaymentRequest[]) => void;
 }
 
+interface PaginatedFeedingRounds {
+  rounds: any[];
+  lastDoc: DocumentSnapshot | null;
+}
+
+interface Store {
+  beneficiaries: any[];
+  donors: any[];
+  donations: any[];
+  feedingRounds: PaginatedFeedingRounds;
+  treasuryCategories: any[];
+  payments: any[];
+  paymentRequests: any[];
+  setBeneficiaries: (beneficiaries: any[]) => void;
+  setDonors: (donors: any[]) => void;
+  setDonations: (donations: any[]) => void;
+  setFeedingRounds: (feedingRounds: PaginatedFeedingRounds) => void;
+  setTreasuryCategories: (categories: any[]) => void;
+  setPayments: (payments: any[]) => void;
+  setPaymentRequests: (requests: any[]) => void;
+}
+
 /**
  * @constant
  * @description Creates a Zustand store with the defined AppState interface
  * @returns A hook that can be used to access and modify the global state
  */
-export const useStore = create<AppState>((set) => ({
+export const useStore = create<Store>((set) => ({
+  beneficiaries: [],
   donors: [],
   donations: [],
-  feedingRounds: [],
+  feedingRounds: { rounds: [], lastDoc: null },
   treasuryCategories: [],
-  beneficiaries: [],
   payments: [],
   paymentRequests: [],
+  setBeneficiaries: (beneficiaries) => set({ beneficiaries }),
   setDonors: (donors) => set({ donors }),
   setDonations: (donations) => set({ donations }),
   setFeedingRounds: (feedingRounds) => set({ feedingRounds }),
   setTreasuryCategories: (treasuryCategories) => set({ treasuryCategories }),
-  setBeneficiaries: (beneficiaries) => set({ beneficiaries }),
   setPayments: (payments) => set({ payments }),
   setPaymentRequests: (paymentRequests) => set({ paymentRequests })
 }));
