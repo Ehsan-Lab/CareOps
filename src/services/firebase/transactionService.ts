@@ -77,22 +77,23 @@ export const transactionServices = {
    * @returns {Promise<string>} Created transaction ID
    */
   recordTransaction: async (data: {
-    type: 'CREDIT' | 'DEBIT';
+    type: 'CREDIT' | 'DEBIT' | 'STATUS_UPDATE';
     amount: number;
     description: string;
     category: string;
     reference: string;
   }) => {
     try {
+      const now = Timestamp.now();
       const transactionData = {
         ...data,
-        date: new Date().toISOString(),
         status: 'COMPLETED',
-        createdAt: Timestamp.now(),
-        updatedAt: Timestamp.now()
+        createdAt: now,
+        updatedAt: now
       };
 
       const docRef = await addDoc(collection(db, COLLECTIONS.TRANSACTIONS), transactionData);
+      console.log('Recorded transaction:', { id: docRef.id, ...transactionData }); // Debug log
       return docRef.id;
     } catch (error) {
       console.error('Error recording transaction:', error);
@@ -109,14 +110,18 @@ export const transactionServices = {
    * @returns {Promise<{transactions: Transaction[], lastDoc: DocumentSnapshot | null}>} Paginated transactions and last document
    * @throws {Error} If fetching transactions fails
    */
-  getAll: async (pageSize: number = BATCH_SIZE, startAfterDoc?: DocumentSnapshot, type?: 'CREDIT' | 'DEBIT'): Promise<{
+  getAll: async (
+    pageSize: number = BATCH_SIZE, 
+    startAfterDoc?: DocumentSnapshot, 
+    type?: 'CREDIT' | 'DEBIT' | 'STATUS_UPDATE'
+  ): Promise<{
     transactions: Transaction[];
     lastDoc: DocumentSnapshot | null;
   }> => {
     try {
       let q = query(
         collection(db, COLLECTIONS.TRANSACTIONS),
-        orderBy('date', 'desc'),
+        orderBy('createdAt', 'desc'),
         limit(pageSize)
       );
 
@@ -134,6 +139,8 @@ export const transactionServices = {
         id: doc.id,
         ...doc.data()
       })) as Transaction[];
+
+      console.log('Fetched transactions:', transactions); // Debug log
 
       return {
         transactions,

@@ -31,13 +31,15 @@ export const useFirebaseQuery = () => {
     setTreasuryCategories,
     setPayments,
     setPaymentRequests,
+    setTransactions,
     beneficiaries,
     donors,
     donations,
     feedingRounds,
     treasuryCategories,
     payments,
-    paymentRequests
+    paymentRequests,
+    transactions
   } = useStore();
 
   // Monitor connection state
@@ -85,13 +87,14 @@ export const useFirebaseQuery = () => {
           beneficiaryServices.getAll(),
           donorServices.getAll(),
           donationServices.getAll(),
-          feedingRoundServices.getAll(10), // Get first page of feeding rounds
+          feedingRoundServices.getAll(10),
           treasuryServices.getAll(),
           paymentServices.getAll(),
           paymentRequestServices.getAll(),
           transactionServices.getAll()
         ]);
 
+        // Update store immediately
         setBeneficiaries(beneficiariesData);
         setDonors(donorsData);
         setDonations(donationsData);
@@ -99,6 +102,7 @@ export const useFirebaseQuery = () => {
         setTreasuryCategories(treasuryCategoriesData);
         setPayments(paymentsData);
         setPaymentRequests(paymentRequestsData);
+        setTransactions(transactionsData.transactions || []);
 
         return {
           beneficiaries: beneficiariesData,
@@ -117,10 +121,11 @@ export const useFirebaseQuery = () => {
     },
     retry: 3,
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000),
-    staleTime: 5000,
+    staleTime: 0,
     cacheTime: 30000,
     refetchOnWindowFocus: true,
-    refetchOnMount: true
+    refetchOnMount: true,
+    refetchInterval: false
   });
 
   return {
@@ -133,6 +138,6 @@ export const useFirebaseQuery = () => {
     treasuryCategories,
     payments,
     paymentRequests,
-    transactions: dataError?.transactions
+    transactions
   };
 };

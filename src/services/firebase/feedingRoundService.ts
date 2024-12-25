@@ -23,7 +23,7 @@ import { db } from '../../config/firebase';
 import { FeedingRound } from '../../types';
 import { COLLECTIONS } from './constants';
 import { format } from 'date-fns';
-import { transactionServices } from '../transactionService';
+import { transactionServices } from '../../services/transactionService';
 
 const MAX_RETRY_ATTEMPTS = 3;
 const BATCH_SIZE = 10;
@@ -158,16 +158,21 @@ export const feedingRoundServices = {
             updatedAt: Timestamp.now()
           });
 
-          return { id: roundRef.id, ...roundData };
-        });
+          // Record the transaction inside the Firestore transaction
+          const transactionRef = doc(collection(db, COLLECTIONS.TRANSACTIONS));
+          const transactionData = {
+            type: 'DEBIT',
+            amount: data.allocatedAmount,
+            description: `Feeding round allocation for ${format(new Date(data.date), 'MMM d, yyyy')}`,
+            category: 'FEEDING_ROUND',
+            reference: roundRef.id,
+            status: 'COMPLETED',
+            createdAt: Timestamp.now(),
+            updatedAt: Timestamp.now()
+          };
+          transaction.set(transactionRef, transactionData);
 
-        // Record the transaction
-        await transactionServices.recordTransaction({
-          type: 'DEBIT',
-          amount: data.allocatedAmount,
-          description: `Feeding round allocation for ${format(new Date(data.date), 'MMM d, yyyy')}`,
-          category: 'FEEDING_ROUND',
-          reference: result.id
+          return { id: roundRef.id, ...roundData };
         });
 
         return result;
@@ -245,10 +250,33 @@ export const feedingRoundServices = {
   updateStatus: async (id: string, status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED') => {
     return retryOperation(async () => {
       try {
-        const docRef = doc(db, COLLECTIONS.FEEDING_ROUNDS, id);
-        await updateDoc(docRef, {
-          status,
-          updatedAt: Timestamp.now()
+        await runTransaction(db, async (transaction) => {
+          const roundRef = doc(db, COLLECTIONS.FEEDING_ROUNDS, id);
+          const roundDoc = await transaction.get(roundRef);
+          
+          if (!roundDoc.exists()) {
+            throw new Error('Feeding round not found');
+          }
+
+          const roundData = roundDoc.data();
+          transaction.update(roundRef, {
+            status,
+            updatedAt: Timestamp.now()
+          });
+
+          // Record status change transaction inside the Firestore transaction
+          const transactionRef = doc(collection(db, COLLECTIONS.TRANSACTIONS));
+          const transactionData = {
+            type: 'STATUS_UPDATE',
+            amount: roundData.allocatedAmount,
+            description: `Feeding round status updated to ${status} for ${format(new Date(roundData.date), 'MMM d, yyyy')}`,
+            category: 'FEEDING_ROUND_STATUS',
+            reference: id,
+            status: 'COMPLETED',
+            createdAt: Timestamp.now(),
+            updatedAt: Timestamp.now()
+          };
+          transaction.set(transactionRef, transactionData);
         });
       } catch (error) {
         console.error('Error updating feeding round status:', error);
@@ -276,6 +304,8 @@ export const feedingRoundServices = {
   delete: async (id: string) => {
     return retryOperation(async () => {
       try {
+        let deletedRoundData: any;
+        
         await runTransaction(db, async (transaction) => {
           const roundRef = doc(db, COLLECTIONS.FEEDING_ROUNDS, id);
           const roundDoc = await transaction.get(roundRef);
@@ -284,8 +314,8 @@ export const feedingRoundServices = {
             throw new Error('Feeding round not found');
           }
 
-          const roundData = roundDoc.data();
-          const categoryRef = doc(db, COLLECTIONS.TREASURY, roundData.categoryId);
+          deletedRoundData = roundDoc.data();
+          const categoryRef = doc(db, COLLECTIONS.TREASURY, deletedRoundData.categoryId);
           const categoryDoc = await transaction.get(categoryRef);
           
           if (!categoryDoc.exists()) {
@@ -294,12 +324,32 @@ export const feedingRoundServices = {
 
           const currentBalance = categoryDoc.data().balance || 0;
 
-          transaction.delete(roundRef);
+          // Record the refund transaction first
+          const transactionRef = doc(collection(db, COLLECTIONS.TRANSACTIONS));
+          const now = Timestamp.now();
+          const transactionData = {
+            type: 'CREDIT',
+            amount: deletedRoundData.allocatedAmount,
+            description: `Refund from deleted feeding round for ${format(new Date(deletedRoundData.date), 'MMM d, yyyy')}`,
+            category: 'FEEDING_ROUND_DELETE',
+            reference: id,
+            status: 'COMPLETED',
+            createdAt: now,
+            updatedAt: now
+          };
+          transaction.set(transactionRef, transactionData);
+
+          // Then update treasury and delete the round
           transaction.update(categoryRef, {
-            balance: currentBalance + roundData.allocatedAmount,
-            updatedAt: Timestamp.now()
+            balance: currentBalance + deletedRoundData.allocatedAmount,
+            updatedAt: now
           });
+          transaction.delete(roundRef);
         });
+
+        // Log successful deletion and transaction recording
+        console.log(`Successfully deleted feeding round ${id} and recorded refund transaction`);
+        return deletedRoundData;
       } catch (error) {
         console.error('Error deleting feeding round:', error);
         throw new Error(`Failed to delete feeding round: ${error.message}`);

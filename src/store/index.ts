@@ -84,6 +84,7 @@ interface Store {
   treasuryCategories: any[];
   payments: any[];
   paymentRequests: any[];
+  transactions: any[];
   setBeneficiaries: (beneficiaries: any[]) => void;
   setDonors: (donors: any[]) => void;
   setDonations: (donations: any[]) => void;
@@ -91,6 +92,7 @@ interface Store {
   setTreasuryCategories: (categories: any[]) => void;
   setPayments: (payments: any[]) => void;
   setPaymentRequests: (requests: any[]) => void;
+  setTransactions: (transactions: any[]) => void;
 }
 
 /**
@@ -106,13 +108,15 @@ export const useStore = create<Store>((set) => ({
   treasuryCategories: [],
   payments: [],
   paymentRequests: [],
+  transactions: [],
   setBeneficiaries: (beneficiaries) => set({ beneficiaries }),
   setDonors: (donors) => set({ donors }),
   setDonations: (donations) => set({ donations }),
   setFeedingRounds: (feedingRounds) => set({ feedingRounds }),
   setTreasuryCategories: (treasuryCategories) => set({ treasuryCategories }),
   setPayments: (payments) => set({ payments }),
-  setPaymentRequests: (paymentRequests) => set({ paymentRequests })
+  setPaymentRequests: (paymentRequests) => set({ paymentRequests }),
+  setTransactions: (transactions) => set({ transactions })
 }));
 
 // Development environment state logger

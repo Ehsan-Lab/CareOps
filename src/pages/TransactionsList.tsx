@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { useFirebaseQuery } from '../hooks/useFirebaseQuery';
 import { format } from 'date-fns';
-import { DollarSign, ChevronDown, ChevronUp } from 'lucide-react';
-import { DocumentSnapshot } from 'firebase/firestore';
+import { DollarSign, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
+import { DocumentSnapshot, Timestamp } from 'firebase/firestore';
+import { transactionServices } from '../services/firebase/transactionService';
 
 interface PaginatedTransactions {
   transactions: Transaction[];
@@ -11,33 +12,34 @@ interface PaginatedTransactions {
 
 interface Transaction {
   id: string;
-  type: 'CREDIT' | 'DEBIT';
+  type: 'CREDIT' | 'DEBIT' | 'STATUS_UPDATE';
   amount: number;
   description: string;
   category: string;
-  date: string;
   reference: string;
   status: 'COMPLETED' | 'PENDING' | 'FAILED';
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
 }
 
 const TransactionsList: React.FC = () => {
-  const { transactions = { transactions: [], lastDoc: null }, isLoading, error } = useFirebaseQuery();
+  const { transactions = [], isLoading, error } = useFirebaseQuery();
   const [sortField, setSortField] = useState<'date' | 'amount' | 'type'>('date');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+  const [filterType, setFilterType] = useState<'ALL' | 'CREDIT' | 'DEBIT' | 'STATUS_UPDATE'>('ALL');
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [lastDoc, setLastDoc] = useState<DocumentSnapshot | null>(null);
-  const [hasMore, setHasMore] = useState(true);
-  const [filterType, setFilterType] = useState<'ALL' | 'CREDIT' | 'DEBIT'>('ALL');
 
   // Validate and transform transactions data
   const validTransactions = React.useMemo(() => {
-    return transactions?.transactions?.filter(transaction => 
+    return transactions?.filter(transaction => 
       transaction && 
       typeof transaction === 'object' &&
       transaction.type &&
       transaction.amount &&
-      transaction.date
+      transaction.createdAt
     ) ?? [];
-  }, [transactions?.transactions]);
+  }, [transactions]);
 
   const sortedTransactions = React.useMemo(() => {
     if (!validTransactions.length) return [];
@@ -48,7 +50,7 @@ const TransactionsList: React.FC = () => {
         let comparison = 0;
         switch (sortField) {
           case 'date':
-            comparison = new Date(a.date).getTime() - new Date(b.date).getTime();
+            comparison = a.createdAt.toMillis() - b.createdAt.toMillis();
             break;
           case 'amount':
             comparison = a.amount - b.amount;
@@ -61,21 +63,28 @@ const TransactionsList: React.FC = () => {
       });
   }, [validTransactions, sortField, sortDirection, filterType]);
 
-  React.useEffect(() => {
-    if (transactions.lastDoc) {
-      setLastDoc(transactions.lastDoc);
-      setHasMore(true);
-    } else {
-      setHasMore(false);
-    }
-  }, [transactions.lastDoc]);
-
   const handleSort = (field: typeof sortField) => {
     if (sortField === field) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
     } else {
       setSortField(field);
       setSortDirection('asc');
+    }
+  };
+
+  const handleLoadMore = async () => {
+    if (isLoadingMore || !lastDoc) return;
+    
+    try {
+      setIsLoadingMore(true);
+      const result = await transactionServices.getAll(10, lastDoc);
+      setLastDoc(result.lastDoc);
+      // Add new transactions to the list
+      // TODO: Update this when implementing proper state management
+    } catch (error) {
+      console.error('Error loading more transactions:', error);
+    } finally {
+      setIsLoadingMore(false);
     }
   };
 
@@ -87,7 +96,7 @@ const TransactionsList: React.FC = () => {
   if (isLoading) {
     return (
       <div className="flex justify-center items-center min-h-screen">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-600"></div>
+        <Loader2 className="h-8 w-8 animate-spin text-emerald-600" />
       </div>
     );
   }
@@ -115,13 +124,14 @@ const TransactionsList: React.FC = () => {
         <div className="mt-4 sm:ml-16 sm:mt-0 sm:flex-none">
           <select
             value={filterType}
-            onChange={(e) => setFilterType(e.target.value as 'ALL' | 'CREDIT' | 'DEBIT')}
+            onChange={(e) => setFilterType(e.target.value as typeof filterType)}
             className="rounded-md border-gray-300 py-2 pl-3 pr-10 text-base focus:border-emerald-500 focus:outline-none focus:ring-emerald-500 sm:text-sm"
             aria-label="Filter transactions by type"
           >
             <option value="ALL">All Transactions</option>
             <option value="CREDIT">Credits Only</option>
             <option value="DEBIT">Debits Only</option>
+            <option value="STATUS_UPDATE">Status Updates</option>
           </select>
         </div>
       </div>
@@ -178,19 +188,27 @@ const TransactionsList: React.FC = () => {
                   {sortedTransactions.map((transaction) => (
                     <tr key={transaction.id} className="hover:bg-gray-50">
                       <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-6">
-                        {format(new Date(transaction.date), 'MMM d, yyyy HH:mm')}
+                        {format(transaction.createdAt.toDate(), 'MMM d, yyyy HH:mm')}
                       </td>
                       <td className="whitespace-nowrap px-3 py-4 text-sm">
                         <span className={`inline-flex rounded-full px-2 text-xs font-semibold leading-5 ${
                           transaction.type === 'CREDIT' 
-                            ? 'bg-green-100 text-green-800' 
-                            : 'bg-red-100 text-red-800'
+                            ? 'bg-green-100 text-green-800'
+                            : transaction.type === 'DEBIT'
+                            ? 'bg-red-100 text-red-800'
+                            : 'bg-blue-100 text-blue-800'
                         }`}>
                           {transaction.type}
                         </span>
                       </td>
                       <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                        <span className={transaction.type === 'CREDIT' ? 'text-green-600' : 'text-red-600'}>
+                        <span className={
+                          transaction.type === 'CREDIT' 
+                            ? 'text-green-600' 
+                            : transaction.type === 'DEBIT'
+                            ? 'text-red-600'
+                            : 'text-blue-600'
+                        }>
                           ${transaction.amount.toFixed(2)}
                         </span>
                       </td>
@@ -223,13 +241,21 @@ const TransactionsList: React.FC = () => {
         </div>
       </div>
 
-      {hasMore && (
-        <div className="mt-4 text-center">
+      {lastDoc && (
+        <div className="mt-4 flex justify-center">
           <button
-            onClick={() => {/* TODO: Implement loadMore */}}
-            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-emerald-700 bg-emerald-100 hover:bg-emerald-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500"
+            onClick={handleLoadMore}
+            disabled={isLoadingMore}
+            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-emerald-600 hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 disabled:opacity-50"
           >
-            Load More
+            {isLoadingMore ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                Loading...
+              </>
+            ) : (
+              'Load More'
+            )}
           </button>
         </div>
       )}

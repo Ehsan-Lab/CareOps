@@ -75,43 +75,50 @@ export const donationServices = {
    */
   create: async (data: any) => {
     try {
-      const result = await runTransaction(db, async (transaction) => {
-        // Create the donation
+      let donationResult;
+      
+      // Main Firestore transaction
+      await runTransaction(db, async (transaction) => {
+        // Create refs
         const donationRef = doc(collection(db, COLLECTIONS.DONATIONS));
+        const categoryRef = doc(db, COLLECTIONS.TREASURY, data.categoryId);
+        
+        // Do all reads first
+        const categoryDoc = await transaction.get(categoryRef);
+        if (!categoryDoc.exists()) {
+          throw new Error('Treasury category not found');
+        }
+        const currentBalance = categoryDoc.data().balance || 0;
+
+        // Prepare donation data
         const donationData = {
           ...data,
           createdAt: Timestamp.now(),
           updatedAt: Timestamp.now()
         };
+
+        // Now do all writes
         transaction.set(donationRef, donationData);
-
-        // Update treasury balance
-        const categoryRef = doc(db, COLLECTIONS.TREASURY, data.categoryId);
-        const categoryDoc = await transaction.get(categoryRef);
-        
-        if (!categoryDoc.exists()) {
-          throw new Error('Treasury category not found');
-        }
-
-        const currentBalance = categoryDoc.data().balance || 0;
         transaction.update(categoryRef, {
           balance: currentBalance + data.amount,
           updatedAt: Timestamp.now()
         });
 
-        return { id: donationRef.id, ...donationData };
+        donationResult = { id: donationRef.id, ...donationData };
       });
 
-      // Record the transaction
-      await transactionServices.recordTransaction({
-        type: 'CREDIT',
-        amount: data.amount,
-        description: `Donation from ${data.donorName || 'Anonymous'}`,
-        category: 'DONATION',
-        reference: result.id
-      });
+      // Record the transaction outside of the Firestore transaction
+      if (donationResult) {
+        await transactionServices.recordTransaction({
+          type: 'CREDIT',
+          amount: data.amount,
+          description: `Donation from ${data.donorName || 'Anonymous'} - ${data.purpose || 'No purpose specified'}`,
+          category: 'DONATION',
+          reference: donationResult.id
+        });
+      }
 
-      return result;
+      return donationResult;
     } catch (error) {
       console.error('Error creating donation:', error);
       throw error;
@@ -145,7 +152,7 @@ export const donationServices = {
         throw new Error('Amount must be greater than 0');
       }
 
-      await runTransaction(db, async (transaction) => {
+      const result = await runTransaction(db, async (transaction) => {
         const donationRef = doc(db, COLLECTIONS.DONATIONS, id);
         const donationDoc = await transaction.get(donationRef);
         
@@ -189,14 +196,36 @@ export const donationServices = {
             balance: (newCategoryDoc.data().balance || 0) + newAmount,
             updatedAt: Timestamp.now()
           });
+
+          // Record adjustment transactions
+          await transactionServices.recordTransaction({
+            type: 'DEBIT',
+            amount: currentDonation.amount,
+            description: `Reversed donation from ${currentDonation.donorName || 'Anonymous'} - Update`,
+            category: 'DONATION_UPDATE',
+            reference: id
+          });
+
+          await transactionServices.recordTransaction({
+            type: 'CREDIT',
+            amount: newAmount,
+            description: `Updated donation from ${data.donorName || currentDonation.donorName || 'Anonymous'}`,
+            category: 'DONATION_UPDATE',
+            reference: id
+          });
         }
 
         // Update donation
-        transaction.update(donationRef, {
+        const updatedData = {
           ...data,
           updatedAt: Timestamp.now()
-        });
+        };
+        transaction.update(donationRef, updatedData);
+
+        return { id, ...currentDonation, ...updatedData };
       });
+
+      return result;
     } catch (error) {
       console.error('Error updating donation:', error);
       throw error;
@@ -253,6 +282,15 @@ export const donationServices = {
 
         // Delete donation
         transaction.delete(donationRef);
+
+        // Record the reversal transaction
+        await transactionServices.recordTransaction({
+          type: 'DEBIT',
+          amount: donationData.amount,
+          description: `Deleted donation from ${donationData.donorName || 'Anonymous'}`,
+          category: 'DONATION_DELETE',
+          reference: id
+        });
       });
     } catch (error) {
       console.error('Error deleting donation:', error);
