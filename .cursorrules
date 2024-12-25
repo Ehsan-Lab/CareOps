@@ -3,3 +3,76 @@ its preferable to implement unittest for the section you are working on.
 properly comment your algorithm and write cleancode
 think deeply when debugging before action
 when you debug and find you see that you need a tool to fix the issue, start implementing it and save it in tools folder and use virtual environment to use it.
+
+# Performance Optimization Guidelines
+1. Data Fetching:
+   - Implement granular queries instead of fetching all data at once
+   - Use pagination for large datasets
+   - Cache frequently accessed data
+   - Implement real-time listeners only when necessary
+
+2. State Management:
+   - Use optimistic updates for better UX
+   - Implement proper loading states
+   - Handle errors gracefully with user feedback
+   - Maintain atomic transactions for data consistency
+
+3. Component Optimization:
+   - Memoize expensive computations
+   - Implement virtualization for long lists
+   - Lazy load components and routes
+   - Use proper React hooks dependencies
+
+4. Firebase Best Practices:
+   - Structure data for efficient querying
+   - Minimize unnecessary reads/writes
+   - Use batch operations when possible
+   - Implement proper security rules
+
+5. Code Quality:
+   - Write comprehensive tests
+   - Document complex logic
+   - Follow clean code principles
+   - Use TypeScript for better type safety
+
+6. Error Handling:
+   - Implement retry mechanisms
+   - Provide meaningful error messages
+   - Log errors for debugging
+   - Handle edge cases gracefully
+
+7. UI/UX Considerations:
+   - Show loading states
+   - Provide immediate feedback
+   - Handle offline scenarios
+   - Maintain responsive design
+
+8. Data Validation:
+   - Validate data on both client and server
+   - Implement proper type checking
+   - Handle null/undefined cases
+   - Sanitize user inputs
+
+9. Pagination Implementation:
+   - Use cursor-based pagination for efficiency
+   - Maintain page state in URL
+   - Handle loading states during page transitions
+   - Cache paginated results
+
+10. Modal and Form Handling:
+    - Implement proper form validation
+    - Handle form submission states
+    - Provide clear error messages
+    - Maintain modal state consistency
+
+11. Data Synchronization:
+    - Handle concurrent updates
+    - Implement proper locking mechanisms
+    - Maintain data consistency
+    - Handle offline/online transitions
+
+12. Security Considerations:
+    - Implement proper authentication
+    - Validate user permissions
+    - Sanitize data inputs
+    - Handle sensitive data properly

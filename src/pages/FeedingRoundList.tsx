@@ -7,23 +7,26 @@ import { FeedingRoundPhotosModal } from '../components/modals/FeedingRoundPhotos
 import { feedingRoundServices } from '../services/firebase';
 import { format } from 'date-fns';
 import { FeedingRound } from '../types';
+import { DocumentSnapshot } from 'firebase/firestore';
 
 const FeedingRoundList: React.FC = () => {
-  const { feedingRounds = [], isLoading, error } = useFirebaseQuery();
+  const { feedingRounds = { rounds: [], lastDoc: null }, isLoading, error } = useFirebaseQuery();
   const [isModalOpen, setIsModalOpen] = React.useState(false);
   const [isPhotosModalOpen, setIsPhotosModalOpen] = React.useState(false);
   const [selectedRound, setSelectedRound] = React.useState<FeedingRound | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [sortField, setSortField] = useState<'date' | 'allocatedAmount' | 'unitPrice' | 'units'>('date');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+  const [lastDoc, setLastDoc] = useState<DocumentSnapshot | null>(null);
+  const [hasMore, setHasMore] = useState(true);
   const queryClient = useQueryClient();
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
   const [updatingStatus, setUpdatingStatus] = useState<string | null>(null);
 
   // Validate and transform feeding rounds data
   const validFeedingRounds = React.useMemo(() => {
-    return feedingRounds?.filter(round => round && typeof round === 'object') ?? [];
-  }, [feedingRounds]);
+    return feedingRounds.rounds?.filter(round => round && typeof round === 'object') ?? [];
+  }, [feedingRounds.rounds]);
 
   const sortedRounds = React.useMemo(() => {
     if (!validFeedingRounds.length) return [];
@@ -56,6 +59,35 @@ const FeedingRoundList: React.FC = () => {
     });
   }, [validFeedingRounds, sortField, sortDirection]);
 
+  React.useEffect(() => {
+    if (feedingRounds.lastDoc) {
+      setLastDoc(feedingRounds.lastDoc);
+      setHasMore(true);
+    } else {
+      setHasMore(false);
+    }
+  }, [feedingRounds.lastDoc]);
+
+  const loadMore = async () => {
+    if (!hasMore || !lastDoc) return;
+
+    try {
+      const result = await feedingRoundServices.getAll(10, lastDoc);
+      const newRounds = result.rounds;
+      
+      // Update the query cache with the combined results
+      queryClient.setQueryData(['feedingRounds'], (oldData: any) => ({
+        rounds: [...(oldData?.rounds || []), ...newRounds],
+        lastDoc: result.lastDoc
+      }));
+
+      setLastDoc(result.lastDoc);
+      setHasMore(newRounds.length === 10);
+    } catch (error) {
+      console.error('Error loading more rounds:', error);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex justify-center items-center min-h-screen">
@@ -81,10 +113,10 @@ const FeedingRoundList: React.FC = () => {
     setUpdatingStatus(id);
     try {
       // Optimistic update
-      const updatedRounds = feedingRounds?.map(round => 
+      const updatedRounds = validFeedingRounds.map(round => 
         round.id === id ? { ...round, status } : round
       );
-      queryClient.setQueryData(['feedingRounds'], updatedRounds);
+      queryClient.setQueryData(['feedingRounds'], { rounds: updatedRounds, lastDoc });
 
       await feedingRoundServices.updateStatus(id, status);
       
@@ -111,7 +143,7 @@ const FeedingRoundList: React.FC = () => {
       try {
         // Optimistic update
         const updatedRounds = validFeedingRounds.filter(round => round.id !== id);
-        queryClient.setQueryData(['feedingRounds'], updatedRounds);
+        queryClient.setQueryData(['feedingRounds'], { rounds: updatedRounds, lastDoc });
 
         await feedingRoundServices.delete(id);
         
@@ -388,6 +420,17 @@ const FeedingRoundList: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {hasMore && (
+        <div className="mt-4 text-center">
+          <button
+            onClick={loadMore}
+            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-emerald-700 bg-emerald-100 hover:bg-emerald-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500"
+          >
+            Load More
+          </button>
+        </div>
+      )}
 
       <FeedingRoundModal
         isOpen={isModalOpen}

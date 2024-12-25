@@ -105,18 +105,22 @@ export const FeedingRoundModal: React.FC<FeedingRoundModalProps> = ({
 
       if (round?.id) {
         const updatedRound = await feedingRoundServices.update(round.id, formattedData);
-        setFeedingRounds(
-          feedingRounds.map(r => 
+        setFeedingRounds({
+          rounds: feedingRounds.rounds.map(r => 
             r.id === round.id ? updatedRound : r
-          )
-        );
+          ),
+          lastDoc: feedingRounds.lastDoc
+        });
       } else {
         const newRound = await feedingRoundServices.create({
           ...formattedData,
           status: 'PENDING',
           categoryId: feedingCategory.id
         });
-        setFeedingRounds([...feedingRounds, newRound]);
+        setFeedingRounds({
+          rounds: [newRound, ...feedingRounds.rounds],
+          lastDoc: feedingRounds.lastDoc
+        });
       }
       
       await queryClient.invalidateQueries({ queryKey: ['all-data'] });
