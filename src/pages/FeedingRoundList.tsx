@@ -1,21 +1,33 @@
 import React, { useState } from 'react';
 import { Utensils, Plus, Play, CheckCircle, Pencil, Trash2, Camera, ImageOff, ChevronDown, ChevronUp } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useFirebaseQuery } from '../hooks/useFirebaseQuery';
+import { useAllData } from '../hooks/useFirebaseQuery';
 import { FeedingRoundModal } from '../components/modals/FeedingRoundModal';
 import { FeedingRoundPhotosModal } from '../components/modals/FeedingRoundPhotosModal';
 import { feedingRoundServices } from '../services/firebase/feedingRoundService';
 import { format } from 'date-fns';
-import { FeedingRound } from '../types';
-import { DocumentSnapshot } from 'firebase/firestore';
+import { FeedingRound, Donor, Beneficiary, Donation, Payment, TreasuryCategory, Transaction } from '../types';
+import { DocumentSnapshot, DocumentData } from 'firebase/firestore';
 
 interface PaginatedFeedingRounds {
   rounds: FeedingRound[];
-  lastDoc: DocumentSnapshot | null;
+  lastDoc: DocumentSnapshot<DocumentData> | null;
+}
+
+interface AllData {
+  feedingRounds: PaginatedFeedingRounds;
+  donors: Donor[];
+  beneficiaries: Beneficiary[];
+  donations: Donation[];
+  payments: Payment[];
+  treasury: TreasuryCategory[];
+  transactions: { transactions: Transaction[]; lastDoc: DocumentSnapshot | null };
 }
 
 const FeedingRoundList: React.FC = () => {
-  const { feedingRounds = { rounds: [], lastDoc: null }, isLoading, error } = useFirebaseQuery();
+  const { data, isLoading, error } = useAllData();
+  const feedingRounds = data?.feedingRounds || { rounds: [], lastDoc: null };
+  console.log('FeedingRoundList: Initial feedingRounds:', feedingRounds);
   const [isModalOpen, setIsModalOpen] = React.useState(false);
   const [isPhotosModalOpen, setIsPhotosModalOpen] = React.useState(false);
   const [selectedRound, setSelectedRound] = React.useState<FeedingRound | null>(null);
@@ -30,41 +42,100 @@ const FeedingRoundList: React.FC = () => {
 
   // Validate and transform feeding rounds data
   const validFeedingRounds = React.useMemo(() => {
-    return feedingRounds.rounds?.filter(round => round && typeof round === 'object') ?? [];
-  }, [feedingRounds.rounds]);
+    console.log('FeedingRoundList: Processing feedingRounds:', feedingRounds);
+    
+    if (!feedingRounds?.rounds) {
+      console.warn('FeedingRoundList: No rounds array in feedingRounds:', feedingRounds);
+      return [];
+    }
+
+    const filtered = feedingRounds.rounds.filter((round: FeedingRound) => {
+      // Basic validation of required fields
+      if (!round || typeof round !== 'object') {
+        console.warn('FeedingRoundList: Invalid round object:', round);
+        return false;
+      }
+      if (!round.id || typeof round.id !== 'string') {
+        console.warn('FeedingRoundList: Missing or invalid id:', round);
+        return false;
+      }
+      if (!round.categoryId || typeof round.categoryId !== 'string') {
+        console.warn('FeedingRoundList: Missing or invalid categoryId:', round);
+        return false;
+      }
+      
+      // Ensure date is valid
+      try {
+        new Date(round.date).toISOString();
+      } catch {
+        console.warn('FeedingRoundList: Invalid date, using current date:', round);
+        round.date = new Date().toISOString().split('T')[0];
+      }
+      
+      // Ensure numeric fields are valid
+      if (typeof round.allocatedAmount !== 'number') {
+        console.warn('FeedingRoundList: Invalid allocatedAmount:', round);
+        round.allocatedAmount = 0;
+      }
+      if (typeof round.unitPrice !== 'number') {
+        console.warn('FeedingRoundList: Invalid unitPrice:', round);
+        round.unitPrice = 0;
+      }
+      
+      // Ensure arrays are valid
+      if (!Array.isArray(round.photos)) {
+        console.warn('FeedingRoundList: Invalid photos array:', round);
+        round.photos = [];
+      }
+      
+      // Ensure strings are valid
+      round.description = round.description || '';
+      round.observations = round.observations || '';
+      round.specialCircumstances = round.specialCircumstances || '';
+      round.driveLink = round.driveLink || '';
+      
+      // Ensure status is valid
+      if (!['PENDING', 'IN_PROGRESS', 'COMPLETED'].includes(round.status)) {
+        console.warn('FeedingRoundList: Invalid status:', round);
+        round.status = 'PENDING';
+      }
+      
+      return true;
+    });
+
+    console.log('FeedingRoundList: Filtered rounds:', filtered.length);
+    return filtered;
+  }, [feedingRounds]);
 
   const sortedRounds = React.useMemo(() => {
+    console.log('FeedingRoundList: Sorting rounds, count:', validFeedingRounds.length);
     if (!validFeedingRounds.length) return [];
     
     return [...validFeedingRounds].sort((a, b) => {
       let comparison = 0;
       switch (sortField) {
         case 'date':
-          comparison = new Date(a.date).getTime() - new Date(b.date).getTime();
+          comparison = new Date(a.date || 0).getTime() - new Date(b.date || 0).getTime();
           break;
         case 'allocatedAmount':
-          const amountA = typeof a.allocatedAmount === 'number' ? a.allocatedAmount : 0;
-          const amountB = typeof b.allocatedAmount === 'number' ? b.allocatedAmount : 0;
-          comparison = amountA - amountB;
+          comparison = (a.allocatedAmount || 0) - (b.allocatedAmount || 0);
           break;
         case 'unitPrice':
-          const priceA = typeof a.unitPrice === 'number' ? a.unitPrice : 0;
-          const priceB = typeof b.unitPrice === 'number' ? b.unitPrice : 0;
-          comparison = priceA - priceB;
+          comparison = (a.unitPrice || 0) - (b.unitPrice || 0);
           break;
-        case 'units':
-          const unitsA = (typeof a.unitPrice === 'number' && a.unitPrice > 0) ? 
-            (typeof a.allocatedAmount === 'number' ? a.allocatedAmount / a.unitPrice : 0) : 0;
-          const unitsB = (typeof b.unitPrice === 'number' && b.unitPrice > 0) ? 
-            (typeof b.allocatedAmount === 'number' ? b.allocatedAmount / b.unitPrice : 0) : 0;
+        case 'units': {
+          const unitsA = a.unitPrice > 0 ? (a.allocatedAmount || 0) / a.unitPrice : 0;
+          const unitsB = b.unitPrice > 0 ? (b.allocatedAmount || 0) / b.unitPrice : 0;
           comparison = unitsA - unitsB;
           break;
+        }
       }
       return sortDirection === 'asc' ? comparison : -comparison;
     });
   }, [validFeedingRounds, sortField, sortDirection]);
 
   React.useEffect(() => {
+    console.log('FeedingRoundList: useEffect - lastDoc update:', feedingRounds.lastDoc);
     if (feedingRounds.lastDoc) {
       setLastDoc(feedingRounds.lastDoc);
       setHasMore(true);
@@ -80,10 +151,16 @@ const FeedingRoundList: React.FC = () => {
       const result = await feedingRoundServices.getAll(10, lastDoc);
       
       // Update the query cache with the combined results
-      queryClient.setQueryData<PaginatedFeedingRounds>(['feedingRounds'], (oldData) => ({
-        rounds: [...(oldData?.rounds || []), ...result.rounds],
-        lastDoc: result.lastDoc
-      }));
+      queryClient.setQueryData<AllData>(['all-data'], (oldData) => {
+        if (!oldData) return oldData;
+        return {
+          ...oldData,
+          feedingRounds: {
+            rounds: [...(oldData.feedingRounds.rounds || []), ...result.rounds],
+            lastDoc: result.lastDoc
+          }
+        };
+      });
 
       if (result.lastDoc) {
         setLastDoc(result.lastDoc);
@@ -125,21 +202,22 @@ const FeedingRoundList: React.FC = () => {
       const updatedRounds = validFeedingRounds.map(round => 
         round.id === id ? { ...round, status } : round
       );
-      queryClient.setQueryData(['feedingRounds'], { rounds: updatedRounds, lastDoc });
+      queryClient.setQueryData<AllData>(['all-data'], (oldData) => ({
+        ...oldData!,
+        feedingRounds: { rounds: updatedRounds, lastDoc }
+      }));
 
       await feedingRoundServices.updateStatus(id, status);
       
       // Invalidate and refetch all relevant queries
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['feedingRounds'] }),
         queryClient.invalidateQueries({ queryKey: ['all-data'] }),
-        queryClient.refetchQueries({ queryKey: ['feedingRounds'] }),
         queryClient.refetchQueries({ queryKey: ['all-data'] })
       ]);
     } catch (error) {
       console.error('Error updating status:', error);
       // Revert optimistic update
-      queryClient.invalidateQueries({ queryKey: ['feedingRounds'] });
+      queryClient.invalidateQueries({ queryKey: ['all-data'] });
       alert('Failed to update status');
     } finally {
       setUpdatingStatus(null);
@@ -152,17 +230,16 @@ const FeedingRoundList: React.FC = () => {
       try {
         // Optimistic update
         const updatedRounds = validFeedingRounds.filter(round => round.id !== id);
-        queryClient.setQueryData(['feedingRounds'], { rounds: updatedRounds, lastDoc });
+        queryClient.setQueryData<AllData>(['all-data'], (oldData) => ({
+          ...oldData!,
+          feedingRounds: { rounds: updatedRounds, lastDoc }
+        }));
 
         await feedingRoundServices.delete(id);
         
         // Invalidate and refetch all relevant queries
         await Promise.all([
-          queryClient.invalidateQueries({ queryKey: ['feedingRounds'] }),
-          queryClient.invalidateQueries({ queryKey: ['treasury'] }),
           queryClient.invalidateQueries({ queryKey: ['all-data'] }),
-          queryClient.refetchQueries({ queryKey: ['feedingRounds'] }),
-          queryClient.refetchQueries({ queryKey: ['treasury'] }),
           queryClient.refetchQueries({ queryKey: ['all-data'] })
         ]);
 
@@ -171,7 +248,7 @@ const FeedingRoundList: React.FC = () => {
       } catch (error) {
         console.error('Error deleting feeding round:', error);
         // Revert optimistic update
-        queryClient.invalidateQueries({ queryKey: ['feedingRounds'] });
+        queryClient.invalidateQueries({ queryKey: ['all-data'] });
         alert('Failed to delete feeding round');
       } finally {
         setIsDeleting(null);
