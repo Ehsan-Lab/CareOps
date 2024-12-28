@@ -44,8 +44,8 @@ A comprehensive web application for managing charity operations, including donor
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/careops.git
-cd careops
+git clone https://github.com/MoatazFarid/CareOps.git
+cd CareOps
 ```
 
 2. Install dependencies:
