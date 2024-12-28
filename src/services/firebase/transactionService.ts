@@ -1,166 +1,154 @@
+/**
+ * @module TransactionService
+ * @description Service for managing complex financial transactions and maintaining transaction history
+ * Handles payment request lifecycle, transaction validation, and balance reconciliation
+ */
+
 import { 
   collection, 
   doc,
   getDocs, 
-  addDoc, 
-  updateDoc, 
   Timestamp,
-  runTransaction,
   query,
+  limit,
+  orderBy,
+  startAfter,
   where,
-  orderBy
+  DocumentSnapshot,
+  runTransaction,
+  addDoc
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
-import { generateId } from '../../utils/idGenerator';
-import { validateTransaction, validatePaymentRequestTransition, validateBalances } from '../../utils/transactionValidator';
 import { COLLECTIONS } from './constants';
+import { Transaction } from '../../types';
 
+const MAX_RETRY_ATTEMPTS = 3;
+const BATCH_SIZE = 10;
+
+/**
+ * Implements exponential backoff for retrying operations
+ * @param {number} attempt - Current attempt number
+ * @returns {number} Delay in milliseconds
+ */
+const getRetryDelay = (attempt: number): number => {
+  return Math.min(1000 * Math.pow(2, attempt), 10000);
+};
+
+/**
+ * Retries an async operation with exponential backoff
+ * @param {Function} operation - Async operation to retry
+ * @param {number} maxAttempts - Maximum number of retry attempts
+ * @returns {Promise<T>} Result of the operation
+ */
+const retryOperation = async <T>(
+  operation: () => Promise<T>,
+  maxAttempts: number = MAX_RETRY_ATTEMPTS
+): Promise<T> => {
+  let lastError: Error | null = null;
+  
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error as Error;
+      if (attempt < maxAttempts - 1) {
+        await new Promise(resolve => setTimeout(resolve, getRetryDelay(attempt)));
+      }
+    }
+  }
+  
+  throw lastError;
+};
+
+/**
+ * @namespace transactionServices
+ * @description Service object containing transaction operations
+ */
 export const transactionServices = {
-  createPaymentRequest: async (data: any) => {
+  /**
+   * Records a new transaction in the transactions collection
+   * @async
+   * @param {Object} data - Transaction data
+   * @param {string} data.type - Type of transaction (CREDIT/DEBIT)
+   * @param {number} data.amount - Transaction amount
+   * @param {string} data.description - Transaction description
+   * @param {string} data.category - Transaction category (e.g., DONATION, FEEDING_ROUND)
+   * @param {string} data.reference - Reference ID (e.g., donation ID, feeding round ID)
+   * @returns {Promise<string>} Created transaction ID
+   */
+  recordTransaction: async (data: {
+    type: 'CREDIT' | 'DEBIT' | 'STATUS_UPDATE';
+    amount: number;
+    description: string;
+    category: string;
+    reference: string;
+  }) => {
     try {
-      const requestId = generateId('PR');
-      
-      await runTransaction(db, async (transaction) => {
-        // Validate treasury balance
-        const categoryRef = doc(db, COLLECTIONS.TREASURY, data.treasuryId);
-        const categoryDoc = await transaction.get(categoryRef);
-        
-        if (!categoryDoc.exists()) {
-          throw new Error('Treasury category not found');
-        }
+      const now = Timestamp.now();
+      const transactionData = {
+        ...data,
+        status: 'COMPLETED',
+        createdAt: now,
+        updatedAt: now
+      };
 
-        const validationResult = validateTransaction(
-          data.treasuryId,
-          data.beneficiaryId,
-          data.amount,
-          categoryDoc.data().balance,
-          {
-            timestamp: Timestamp.now(),
-            description: data.description,
-            type: data.paymentType
-          }
-        );
-
-        if (!validationResult.isValid) {
-          throw new Error(`Validation failed: ${validationResult.errors.join(', ')}`);
-        }
-
-        // Create payment request with generated ID
-        const requestRef = doc(collection(db, COLLECTIONS.PAYMENT_REQUESTS), requestId);
-        transaction.set(requestRef, {
-          id: requestId,
-          ...data,
-          status: 'CREATED',
-          createdAt: Timestamp.now(),
-          updatedAt: Timestamp.now()
-        });
-      });
-
-      return requestId;
+      const docRef = await addDoc(collection(db, COLLECTIONS.TRANSACTIONS), transactionData);
+      console.log('Recorded transaction:', { id: docRef.id, ...transactionData }); // Debug log
+      return docRef.id;
     } catch (error) {
-      console.error('Error creating payment request:', error);
-      throw error;
+      console.error('Error recording transaction:', error);
+      throw new Error(`Failed to record transaction: ${error.message}`);
     }
   },
 
-  completePaymentRequest: async (requestId: string) => {
+  /**
+   * Retrieves transactions from the database with pagination
+   * @async
+   * @param {number} pageSize - Number of items per page
+   * @param {DocumentSnapshot} [startAfterDoc] - Document to start after for pagination
+   * @param {string} [type] - Optional type filter (CREDIT/DEBIT)
+   * @returns {Promise<{transactions: Transaction[], lastDoc: DocumentSnapshot | null}>} Paginated transactions and last document
+   * @throws {Error} If fetching transactions fails
+   */
+  getAll: async (
+    pageSize: number = BATCH_SIZE, 
+    startAfterDoc?: DocumentSnapshot, 
+    type?: 'CREDIT' | 'DEBIT' | 'STATUS_UPDATE'
+  ): Promise<{
+    transactions: Transaction[];
+    lastDoc: DocumentSnapshot | null;
+  }> => {
     try {
-      await runTransaction(db, async (transaction) => {
-        const requestRef = doc(db, COLLECTIONS.PAYMENT_REQUESTS, requestId);
-        const requestDoc = await transaction.get(requestRef);
-        
-        if (!requestDoc.exists()) {
-          throw new Error('Payment request not found');
-        }
+      let q = query(
+        collection(db, COLLECTIONS.TRANSACTIONS),
+        orderBy('createdAt', 'desc'),
+        limit(pageSize)
+      );
 
-        const requestData = requestDoc.data();
-        const paymentId = generateId('PY');
-
-        const validationResult = validatePaymentRequestTransition(
-          requestId,
-          paymentId,
-          'COMPLETED'
-        );
-
-        if (!validationResult.isValid) {
-          throw new Error(`Validation failed: ${validationResult.errors.join(', ')}`);
-        }
-
-        // Create payment
-        const paymentRef = doc(collection(db, COLLECTIONS.PAYMENTS), paymentId);
-        transaction.set(paymentRef, {
-          id: paymentId,
-          requestId,
-          beneficiaryId: requestData.beneficiaryId,
-          categoryId: requestData.treasuryId,
-          amount: requestData.amount,
-          date: requestData.startDate,
-          paymentType: requestData.paymentType,
-          notes: requestData.notes,
-          description: requestData.description,
-          status: 'COMPLETED',
-          createdAt: Timestamp.now(),
-          updatedAt: Timestamp.now()
-        });
-
-        // Update request status
-        transaction.update(requestRef, {
-          status: 'COMPLETED',
-          paymentId,
-          updatedAt: Timestamp.now()
-        });
-
-        // Update treasury balance
-        const categoryRef = doc(db, COLLECTIONS.TREASURY, requestData.treasuryId);
-        const categoryDoc = await transaction.get(categoryRef);
-        
-        if (!categoryDoc.exists()) {
-          throw new Error('Treasury category not found');
-        }
-
-        const currentBalance = categoryDoc.data().balance;
-        transaction.update(categoryRef, {
-          balance: currentBalance - requestData.amount,
-          updatedAt: Timestamp.now()
-        });
-      });
-
-      return true;
-    } catch (error) {
-      console.error('Error completing payment request:', error);
-      throw error;
-    }
-  },
-
-  validateTransactionHistory: async () => {
-    try {
-      const [paymentsSnapshot, treasurySnapshot] = await Promise.all([
-        getDocs(collection(db, COLLECTIONS.PAYMENTS)),
-        getDocs(collection(db, COLLECTIONS.TREASURY))
-      ]);
-
-      const transactions = paymentsSnapshot.docs.map(doc => ({
-        sourceId: doc.data().categoryId,
-        destinationId: doc.data().beneficiaryId,
-        amount: doc.data().amount
-      }));
-
-      const balances = treasurySnapshot.docs.reduce((acc, doc) => {
-        acc[doc.id] = doc.data().balance;
-        return acc;
-      }, {} as Record<string, number>);
-
-      const validationResult = validateBalances(transactions, balances);
-      
-      if (!validationResult.isValid) {
-        console.error('Transaction history validation failed:', validationResult.errors);
-        return false;
+      if (type) {
+        q = query(q, where('type', '==', type));
       }
 
-      return true;
+      if (startAfterDoc) {
+        q = query(q, startAfter(startAfterDoc));
+      }
+
+      const querySnapshot = await retryOperation(async () => await getDocs(q));
+      
+      const transactions = querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as Transaction[];
+
+      console.log('Fetched transactions:', transactions); // Debug log
+
+      return {
+        transactions,
+        lastDoc: querySnapshot.docs[querySnapshot.docs.length - 1] || null
+      };
     } catch (error) {
-      console.error('Error validating transaction history:', error);
-      throw error;
+      console.error('Error fetching transactions:', error);
+      throw new Error(`Failed to fetch transactions: ${error.message}`);
     }
   }
 };

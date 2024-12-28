@@ -1,109 +1,65 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Common validation functions
-    function isAuthenticated() {
+    // Helper functions
+    function isSignedIn() {
       return request.auth != null;
     }
-    
-    function isValidStatus(status) {
-      return status in ['ACTIVE', 'INACTIVE', 'CREATED', 'PENDING', 'COMPLETED'];
-    }
-    
-    function isValidPaymentType(type) {
-      return type in ['ONE_TIME', 'RECURRING', 'SEASONAL'];
-    }
-    
-    function isValidFrequency(freq) {
-      return freq in ['weekly', 'monthly', 'quarterly', 'yearly'];
-    }
-    
-    function hasValidTimestamps() {
-      return request.resource.data.createdAt is timestamp &&
-             request.resource.data.updatedAt is timestamp;
-    }
-    
-    function isValidAmount() {
-      return request.resource.data.amount is number && 
-             request.resource.data.amount > 0;
+
+    function isAdmin() {
+      return isSignedIn() && request.auth.token.admin == true;
     }
 
-    // Collection rules
+    function isValidAmount() {
+      return request.resource.data.amount is number && request.resource.data.amount > 0;
+    }
+
+    function hasValidTimestamps() {
+      let hasCreatedAt = request.resource.data.createdAt is timestamp;
+      let hasUpdatedAt = request.resource.data.updatedAt is timestamp;
+      return hasCreatedAt && hasUpdatedAt;
+    }
+
+    // Common rules
+    match /{document=**} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // Specific collection rules
     match /donors/{donorId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated() &&
-                      hasValidTimestamps() &&
-                      request.resource.data.name is string &&
-                      request.resource.data.contact is string;
-      allow update: if isAuthenticated() &&
-                      request.resource.data.updatedAt is timestamp;
-      allow delete: if isAuthenticated();
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /donations/{donationId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin() && isValidAmount() && hasValidTimestamps();
     }
 
     match /beneficiaries/{beneficiaryId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated() &&
-                      hasValidTimestamps() &&
-                      request.resource.data.name is string &&
-                      request.resource.data.status is string &&
-                      isValidStatus(request.resource.data.status);
-      allow update: if isAuthenticated() &&
-                      request.resource.data.updatedAt is timestamp &&
-                      (!request.resource.data.keys().hasAny(['status']) || 
-                        isValidStatus(request.resource.data.status));
-      allow delete: if isAuthenticated();
+      allow read: if isSignedIn();
+      allow write: if isAdmin() && hasValidTimestamps();
     }
 
-    match /paymentRequests/{requestId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated() &&
-                      hasValidTimestamps() &&
-                      isValidAmount() &&
-                      request.resource.data.beneficiaryId is string &&
-                      request.resource.data.treasuryId is string &&
-                      isValidPaymentType(request.resource.data.paymentType) &&
-                      request.resource.data.startDate is string &&
-                      isValidStatus(request.resource.data.status) &&
-                      (!request.resource.data.keys().hasAny(['frequency']) || 
-                        isValidFrequency(request.resource.data.frequency));
-      allow update: if isAuthenticated() &&
-                      request.resource.data.updatedAt is timestamp &&
-                      (!request.resource.data.keys().hasAny(['status']) || 
-                        isValidStatus(request.resource.data.status)) &&
-                      (!request.resource.data.keys().hasAny(['paymentType']) || 
-                        isValidPaymentType(request.resource.data.paymentType)) &&
-                      (!request.resource.data.keys().hasAny(['frequency']) || 
-                        isValidFrequency(request.resource.data.frequency));
-      allow delete: if isAuthenticated() &&
-                      get(path('/databases/$(database)/documents/paymentRequests/$(requestId)')).data.status != 'COMPLETED';
-    }
-
-    match /treasuryCategories/{categoryId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated() &&
-                      hasValidTimestamps() &&
-                      request.resource.data.name is string &&
-                      request.resource.data.balance is number &&
-                      request.resource.data.balance >= 0;
-      allow update: if isAuthenticated() &&
-                      request.resource.data.updatedAt is timestamp &&
-                      (!request.resource.data.keys().hasAny(['balance']) || 
-                        request.resource.data.balance >= 0);
-      allow delete: if isAuthenticated() &&
-                      get(path('/databases/$(database)/documents/treasuryCategories/$(categoryId)')).data.balance == 0;
+    match /payments/{paymentId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin() && isValidAmount() && hasValidTimestamps();
     }
 
     match /feedingRounds/{roundId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated() &&
-                      hasValidTimestamps() &&
-                      request.resource.data.date is string &&
-                      isValidAmount() &&
-                      request.resource.data.beneficiaryCount is number &&
-                      request.resource.data.beneficiaryCount > 0;
-      allow update: if isAuthenticated() &&
-                      request.resource.data.updatedAt is timestamp;
-      allow delete: if isAuthenticated();
+      allow read: if isSignedIn();
+      allow write: if isAdmin() && isValidAmount() && hasValidTimestamps();
+    }
+
+    match /treasury/{categoryId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin() && isValidAmount() && hasValidTimestamps();
+    }
+
+    match /transactions/{transactionId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin() && isValidAmount() && hasValidTimestamps();
     }
   }
 }

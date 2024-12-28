@@ -1,10 +1,29 @@
-// Collection references
+/**
+ * @module FirebaseConstants
+ * @description Constants used throughout the Firebase services
+ */
+
+/**
+ * @constant
+ * @description Collection names used in Firestore database
+ * @readonly
+ * @enum {string}
+ */
 export const COLLECTIONS = {
+  /** Collection for storing donor information */
   DONORS: 'donors',
+  /** Collection for storing donation records */
   DONATIONS: 'donations',
-  FEEDING_ROUNDS: 'feedingRounds',
+  /** Collection for storing feeding round events */
+  FEEDING_ROUNDS: 'feeding-rounds',
+  /** Collection for storing treasury categories and balances */
   TREASURY: 'treasury',
+  /** Collection for storing beneficiary information */
   BENEFICIARIES: 'beneficiaries',
+  /** Collection for storing payment records */
   PAYMENTS: 'payments',
-  PAYMENT_REQUESTS: 'paymentRequests'
+  /** Collection for storing payment request records */
+  PAYMENT_REQUESTS: 'payment-requests',
+  /** Collection for storing transactions */
+  TRANSACTIONS: 'transactions'
 } as const;

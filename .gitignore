@@ -22,3 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# envireonment files
+.env
+.env.production
+
+/coverage

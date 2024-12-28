@@ -4,19 +4,114 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useFirebaseQuery } from '../hooks/useFirebaseQuery';
 import { FeedingRoundModal } from '../components/modals/FeedingRoundModal';
 import { FeedingRoundPhotosModal } from '../components/modals/FeedingRoundPhotosModal';
-import { feedingRoundServices } from '../services/firebase';
+import { feedingRoundServices } from '../services/firebase/feedingRoundService';
 import { format } from 'date-fns';
 import { FeedingRound } from '../types';
+import { DocumentSnapshot } from 'firebase/firestore';
+
+interface PaginatedFeedingRounds {
+  rounds: FeedingRound[];
+  lastDoc: DocumentSnapshot | null;
+}
 
 const FeedingRoundList: React.FC = () => {
-  const { feedingRounds = [] } = useFirebaseQuery();
+  const { feedingRounds = { rounds: [], lastDoc: null }, isLoading, error } = useFirebaseQuery();
   const [isModalOpen, setIsModalOpen] = React.useState(false);
   const [isPhotosModalOpen, setIsPhotosModalOpen] = React.useState(false);
   const [selectedRound, setSelectedRound] = React.useState<FeedingRound | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [sortField, setSortField] = useState<'date' | 'allocatedAmount' | 'unitPrice' | 'units'>('date');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+  const [lastDoc, setLastDoc] = useState<DocumentSnapshot | null>(null);
+  const [hasMore, setHasMore] = useState(true);
   const queryClient = useQueryClient();
+  const [isDeleting, setIsDeleting] = useState<string | null>(null);
+  const [updatingStatus, setUpdatingStatus] = useState<string | null>(null);
+
+  // Validate and transform feeding rounds data
+  const validFeedingRounds = React.useMemo(() => {
+    return feedingRounds.rounds?.filter(round => round && typeof round === 'object') ?? [];
+  }, [feedingRounds.rounds]);
+
+  const sortedRounds = React.useMemo(() => {
+    if (!validFeedingRounds.length) return [];
+    
+    return [...validFeedingRounds].sort((a, b) => {
+      let comparison = 0;
+      switch (sortField) {
+        case 'date':
+          comparison = new Date(a.date).getTime() - new Date(b.date).getTime();
+          break;
+        case 'allocatedAmount':
+          const amountA = typeof a.allocatedAmount === 'number' ? a.allocatedAmount : 0;
+          const amountB = typeof b.allocatedAmount === 'number' ? b.allocatedAmount : 0;
+          comparison = amountA - amountB;
+          break;
+        case 'unitPrice':
+          const priceA = typeof a.unitPrice === 'number' ? a.unitPrice : 0;
+          const priceB = typeof b.unitPrice === 'number' ? b.unitPrice : 0;
+          comparison = priceA - priceB;
+          break;
+        case 'units':
+          const unitsA = (typeof a.unitPrice === 'number' && a.unitPrice > 0) ? 
+            (typeof a.allocatedAmount === 'number' ? a.allocatedAmount / a.unitPrice : 0) : 0;
+          const unitsB = (typeof b.unitPrice === 'number' && b.unitPrice > 0) ? 
+            (typeof b.allocatedAmount === 'number' ? b.allocatedAmount / b.unitPrice : 0) : 0;
+          comparison = unitsA - unitsB;
+          break;
+      }
+      return sortDirection === 'asc' ? comparison : -comparison;
+    });
+  }, [validFeedingRounds, sortField, sortDirection]);
+
+  React.useEffect(() => {
+    if (feedingRounds.lastDoc) {
+      setLastDoc(feedingRounds.lastDoc);
+      setHasMore(true);
+    } else {
+      setHasMore(false);
+    }
+  }, [feedingRounds.lastDoc]);
+
+  const loadMore = async () => {
+    if (!hasMore || !lastDoc) return;
+
+    try {
+      const result = await feedingRoundServices.getAll(10, lastDoc);
+      
+      // Update the query cache with the combined results
+      queryClient.setQueryData<PaginatedFeedingRounds>(['feedingRounds'], (oldData) => ({
+        rounds: [...(oldData?.rounds || []), ...result.rounds],
+        lastDoc: result.lastDoc
+      }));
+
+      if (result.lastDoc) {
+        setLastDoc(result.lastDoc);
+        setHasMore(result.rounds.length === 10);
+      } else {
+        setHasMore(false);
+      }
+    } catch (error) {
+      console.error('Error loading more rounds:', error);
+      setHasMore(false);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center items-center min-h-screen">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-600"></div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-4 text-red-600">
+        Error loading feeding rounds. Please try again later.
+      </div>
+    );
+  }
 
   const handleEdit = (round: FeedingRound) => {
     setSelectedRound(round);
@@ -24,24 +119,62 @@ const FeedingRoundList: React.FC = () => {
   };
 
   const handleStatusUpdate = async (id: string, status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED') => {
+    setUpdatingStatus(id);
     try {
+      // Optimistic update
+      const updatedRounds = validFeedingRounds.map(round => 
+        round.id === id ? { ...round, status } : round
+      );
+      queryClient.setQueryData(['feedingRounds'], { rounds: updatedRounds, lastDoc });
+
       await feedingRoundServices.updateStatus(id, status);
-      queryClient.invalidateQueries({ queryKey: ['feedingRounds'] });
+      
+      // Invalidate and refetch all relevant queries
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['feedingRounds'] }),
+        queryClient.invalidateQueries({ queryKey: ['all-data'] }),
+        queryClient.refetchQueries({ queryKey: ['feedingRounds'] }),
+        queryClient.refetchQueries({ queryKey: ['all-data'] })
+      ]);
     } catch (error) {
       console.error('Error updating status:', error);
+      // Revert optimistic update
+      queryClient.invalidateQueries({ queryKey: ['feedingRounds'] });
       alert('Failed to update status');
+    } finally {
+      setUpdatingStatus(null);
     }
   };
 
   const handleDelete = async (id: string) => {
     if (window.confirm('Are you sure you want to delete this feeding round?')) {
+      setIsDeleting(id);
       try {
+        // Optimistic update
+        const updatedRounds = validFeedingRounds.filter(round => round.id !== id);
+        queryClient.setQueryData(['feedingRounds'], { rounds: updatedRounds, lastDoc });
+
         await feedingRoundServices.delete(id);
-        queryClient.invalidateQueries({ queryKey: ['feedingRounds'] });
-        queryClient.invalidateQueries({ queryKey: ['treasury'] });
+        
+        // Invalidate and refetch all relevant queries
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ['feedingRounds'] }),
+          queryClient.invalidateQueries({ queryKey: ['treasury'] }),
+          queryClient.invalidateQueries({ queryKey: ['all-data'] }),
+          queryClient.refetchQueries({ queryKey: ['feedingRounds'] }),
+          queryClient.refetchQueries({ queryKey: ['treasury'] }),
+          queryClient.refetchQueries({ queryKey: ['all-data'] })
+        ]);
+
+        // Clean up expanded state
+        setExpandedId(null);
       } catch (error) {
         console.error('Error deleting feeding round:', error);
+        // Revert optimistic update
+        queryClient.invalidateQueries({ queryKey: ['feedingRounds'] });
         alert('Failed to delete feeding round');
+      } finally {
+        setIsDeleting(null);
       }
     }
   };
@@ -59,29 +192,6 @@ const FeedingRoundList: React.FC = () => {
       setSortDirection('asc');
     }
   };
-
-  const sortedRounds = React.useMemo(() => {
-    return [...feedingRounds].sort((a, b) => {
-      let comparison = 0;
-      switch (sortField) {
-        case 'date':
-          comparison = new Date(a.date).getTime() - new Date(b.date).getTime();
-          break;
-        case 'allocatedAmount':
-          comparison = a.allocatedAmount - b.allocatedAmount;
-          break;
-        case 'unitPrice':
-          comparison = (a.unitPrice || 0) - (b.unitPrice || 0);
-          break;
-        case 'units':
-          const unitsA = a.unitPrice ? a.allocatedAmount / a.unitPrice : 0;
-          const unitsB = b.unitPrice ? b.allocatedAmount / b.unitPrice : 0;
-          comparison = unitsA - unitsB;
-          break;
-      }
-      return sortDirection === 'asc' ? comparison : -comparison;
-    });
-  }, [feedingRounds, sortField, sortDirection]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -181,7 +291,10 @@ const FeedingRoundList: React.FC = () => {
                 </thead>
                 <tbody className="divide-y divide-gray-200 bg-white">
                   {sortedRounds.map((round) => {
-                    const units = round.unitPrice ? round.allocatedAmount / round.unitPrice : 0;
+                    if (!round || typeof round !== 'object') return null;
+
+                    const units = (typeof round.unitPrice === 'number' && round.unitPrice > 0) ? 
+                      (typeof round.allocatedAmount === 'number' ? round.allocatedAmount / round.unitPrice : 0) : 0;
                     const isExpanded = expandedId === round.id;
 
                     return (
@@ -191,13 +304,13 @@ const FeedingRoundList: React.FC = () => {
                             {format(new Date(round.date), 'MMM d, yyyy')}
                           </td>
                           <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                            ${round.allocatedAmount.toFixed(2)}
+                            ${typeof round.allocatedAmount === 'number' ? round.allocatedAmount.toFixed(2) : '0.00'}
                           </td>
                           <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                            ${round.unitPrice?.toFixed(2) || 'N/A'}
+                            {typeof round.unitPrice === 'number' ? `$${round.unitPrice.toFixed(2)}` : 'N/A'}
                           </td>
                           <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                            {units.toFixed(2)}
+                            {units > 0 ? units.toFixed(2) : 'N/A'}
                           </td>
                           <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                             <span className={`inline-flex rounded-full px-2 text-xs font-semibold leading-5 ${getStatusColor(round.status)}`}>
@@ -219,20 +332,30 @@ const FeedingRoundList: React.FC = () => {
                               </button>
                               {round.status === 'PENDING' && (
                                 <button
-                                  className="text-blue-600 hover:text-blue-900"
+                                  className="text-blue-600 hover:text-blue-900 disabled:opacity-50 disabled:cursor-not-allowed"
                                   onClick={() => handleStatusUpdate(round.id, 'IN_PROGRESS')}
+                                  disabled={updatingStatus === round.id}
                                   title="Start Round"
                                 >
-                                  <Play className="h-4 w-4" />
+                                  {updatingStatus === round.id ? (
+                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600" />
+                                  ) : (
+                                    <Play className="h-4 w-4" />
+                                  )}
                                 </button>
                               )}
                               {round.status === 'IN_PROGRESS' && (
                                 <button
-                                  className="text-green-600 hover:text-green-900"
+                                  className="text-green-600 hover:text-green-900 disabled:opacity-50 disabled:cursor-not-allowed"
                                   onClick={() => handleStatusUpdate(round.id, 'COMPLETED')}
+                                  disabled={updatingStatus === round.id}
                                   title="Complete Round"
                                 >
-                                  <CheckCircle className="h-4 w-4" />
+                                  {updatingStatus === round.id ? (
+                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-green-600" />
+                                  ) : (
+                                    <CheckCircle className="h-4 w-4" />
+                                  )}
                                 </button>
                               )}
                               {round.status !== 'COMPLETED' && (
@@ -245,11 +368,16 @@ const FeedingRoundList: React.FC = () => {
                                     <Pencil className="h-4 w-4" />
                                   </button>
                                   <button
-                                    className="text-red-600 hover:text-red-900"
+                                    className="text-red-600 hover:text-red-900 disabled:opacity-50 disabled:cursor-not-allowed"
                                     onClick={() => handleDelete(round.id)}
+                                    disabled={isDeleting === round.id}
                                     title="Delete Round"
                                   >
-                                    <Trash2 className="h-4 w-4" />
+                                    {isDeleting === round.id ? (
+                                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-red-600" />
+                                    ) : (
+                                      <Trash2 className="h-4 w-4" />
+                                    )}
                                   </button>
                                 </>
                               )}
@@ -301,6 +429,17 @@ const FeedingRoundList: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {hasMore && (
+        <div className="mt-4 text-center">
+          <button
+            onClick={loadMore}
+            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-emerald-700 bg-emerald-100 hover:bg-emerald-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500"
+          >
+            Load More
+          </button>
+        </div>
+      )}
 
       <FeedingRoundModal
         isOpen={isModalOpen}
