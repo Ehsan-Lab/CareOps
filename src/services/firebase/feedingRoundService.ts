@@ -23,7 +23,7 @@ import { db } from '../../config/firebase';
 import { FeedingRound } from '../../types';
 import { COLLECTIONS } from './constants';
 import { format } from 'date-fns';
-import { transactionServices } from '../../services/transactionService';
+import { transactionServices } from './transactionService';
 
 const MAX_RETRY_ATTEMPTS = 3;
 const BATCH_SIZE = 10;
