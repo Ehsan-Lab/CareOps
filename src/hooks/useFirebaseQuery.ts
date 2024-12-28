@@ -13,18 +13,25 @@ import { transactionServices } from "../services/firebase/transactionService";
  */
 export const useFirebaseQuery = () => {
   const { data, isLoading, error } = useAllData();
+  console.log('useFirebaseQuery: Raw data:', data);
   
-  return {
+  const result = {
     isLoading,
     error,
     donors: data?.donors || [],
     beneficiaries: data?.beneficiaries || [],
     donations: data?.donations || [],
     payments: data?.payments || [],
-    feedingRounds: data?.feedingRounds || [],
+    feedingRounds: {
+      rounds: data?.feedingRounds?.rounds || [],
+      lastDoc: data?.feedingRounds?.lastDoc || null
+    },
     treasuryCategories: data?.treasury || [],
     transactions: data?.transactions || [],
   };
+
+  console.log('useFirebaseQuery: Returning result:', result);
+  return result;
 };
 
 /**
@@ -35,12 +42,13 @@ export function useAllData() {
   return useQuery({
     queryKey: ["all-data"],
     queryFn: async () => {
+      console.log('useAllData: Starting data fetch...');
       const [
         donors,
         beneficiaries,
         donations,
         payments,
-        feedingRounds,
+        feedingRoundsResult,
         treasury,
         transactions
       ] = await Promise.all([
@@ -53,15 +61,23 @@ export function useAllData() {
         transactionServices.getAll()
       ]);
 
-      return {
+      console.log('useAllData: Feeding rounds result:', feedingRoundsResult);
+
+      const result = {
         donors,
         beneficiaries,
         donations,
         payments,
-        feedingRounds,
+        feedingRounds: {
+          rounds: feedingRoundsResult.rounds || [],
+          lastDoc: feedingRoundsResult.lastDoc || null
+        },
         treasury,
         transactions
       };
+
+      console.log('useAllData: Returning data:', result);
+      return result;
     }
   });
 }
