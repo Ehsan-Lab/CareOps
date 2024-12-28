@@ -139,68 +139,104 @@ export function PaymentTable({
       </thead>
       <tbody className="divide-y divide-gray-200 bg-white">
         {payments.map((payment) => (
-          <tr key={payment.id} className={selectedPayments.includes(payment.id) ? 'bg-gray-50' : undefined}>
-            <td className="relative px-7 sm:w-12 sm:px-6">
-              <input
-                type="checkbox"
-                className="absolute left-4 top-1/2 -mt-2 h-4 w-4 rounded border-gray-300"
-                checked={selectedPayments.includes(payment.id)}
-                onChange={(e) => onSelectPayment(payment.id, e.target.checked)}
-                title={`Select payment ${payment.id}`}
-                aria-label={`Select payment ${payment.id}`}
-              />
-            </td>
-            <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900">
-              {payment.id}
-            </td>
-            <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-              {getBeneficiaryName(payment.beneficiaryId)}
-            </td>
-            <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-              {formatCurrency(payment.amount)}
-            </td>
-            <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-              {getCategoryName(payment.categoryId)}
-            </td>
-            <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-              {payment.paymentType}
-            </td>
-            <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-              <div className="flex items-center gap-2">
-                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(payment.status)}`}>
-                  {payment.status}
-                </span>
-                {updatingStatus === payment.id && (
-                  <Clock className="w-4 h-4 animate-spin text-gray-500" />
-                )}
-              </div>
-            </td>
-            <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-              {formatDate(payment.date)}
-            </td>
-            <td className="whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
-              <div className="flex gap-2 justify-end">
-                {getStatusActions(payment)}
-                <button
-                  onClick={() => onEdit(payment)}
-                  className="text-blue-600 hover:text-blue-900"
-                >
-                  Edit
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onToggleExpand(expandedId === payment.id ? null : payment.id)}
-                  className="text-gray-400 hover:text-gray-500"
-                >
-                  {expandedId === payment.id ? (
-                    <ChevronUp className="h-5 w-5" />
-                  ) : (
-                    <ChevronDown className="h-5 w-5" />
+          <React.Fragment key={payment.id}>
+            <tr className={selectedPayments.includes(payment.id) ? 'bg-gray-50' : undefined}>
+              <td className="relative px-7 sm:w-12 sm:px-6">
+                <input
+                  type="checkbox"
+                  className="absolute left-4 top-1/2 -mt-2 h-4 w-4 rounded border-gray-300"
+                  checked={selectedPayments.includes(payment.id)}
+                  onChange={(e) => onSelectPayment(payment.id, e.target.checked)}
+                  title={`Select payment ${payment.id}`}
+                  aria-label={`Select payment ${payment.id}`}
+                />
+              </td>
+              <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900">
+                {payment.id}
+              </td>
+              <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                {getBeneficiaryName(payment.beneficiaryId)}
+              </td>
+              <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                {formatCurrency(payment.amount)}
+              </td>
+              <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                {getCategoryName(payment.categoryId)}
+              </td>
+              <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                {payment.paymentType}
+              </td>
+              <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                <div className="flex items-center gap-2">
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(payment.status)}`}>
+                    {payment.status}
+                  </span>
+                  {updatingStatus === payment.id && (
+                    <Clock className="w-4 h-4 animate-spin text-gray-500" />
                   )}
-                </button>
-              </div>
-            </td>
-          </tr>
+                </div>
+              </td>
+              <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                {formatDate(payment.date)}
+              </td>
+              <td className="whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
+                <div className="flex gap-2 justify-end">
+                  {getStatusActions(payment)}
+                  <button
+                    onClick={() => onEdit(payment)}
+                    className="text-blue-600 hover:text-blue-900"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onToggleExpand(expandedId === payment.id ? null : payment.id)}
+                    className="text-gray-400 hover:text-gray-500"
+                  >
+                    {expandedId === payment.id ? (
+                      <ChevronUp className="h-5 w-5" />
+                    ) : (
+                      <ChevronDown className="h-5 w-5" />
+                    )}
+                  </button>
+                </div>
+              </td>
+            </tr>
+            {expandedId === payment.id && (
+              <tr>
+                <td colSpan={9} className="px-4 py-4 text-sm text-gray-500 bg-gray-50">
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <span className="font-medium">Beneficiary ID:</span> {payment.beneficiaryId}
+                      </div>
+                      <div>
+                        <span className="font-medium">Treasury ID:</span> {payment.treasuryId}
+                      </div>
+                    </div>
+                    {payment.paymentType === 'RECURRING' && (
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <span className="font-medium">Frequency:</span> {payment.frequency}
+                        </div>
+                        <div>
+                          <span className="font-medium">Repetition:</span> {payment.repetitionNumber}/{payment.totalRepetitions}
+                        </div>
+                      </div>
+                    )}
+                    <div>
+                      <span className="font-medium">Description:</span> {payment.description}
+                    </div>
+                    {payment.notes && (
+                      <div>
+                        <span className="font-medium">Notes:</span> {payment.notes}
+                      </div>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            )}
+          </React.Fragment>
         ))}
       </tbody>
     </table>

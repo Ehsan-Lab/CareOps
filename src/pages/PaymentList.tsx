@@ -5,7 +5,7 @@ import { useFirebaseQuery } from '../hooks/useFirebaseQuery';
 import { PaymentModal } from '../components/modals/PaymentModal';
 import { PaymentTable } from '../components/PaymentTable';
 import { PaymentFilters } from '../components/PaymentFilters';
-import { paymentServices } from '../services/firebase';
+import { paymentServices } from '../services/firebase/paymentService';
 import { Payment, PaymentStatus, PaymentType } from '../types';
 import { useQueryClient } from '@tanstack/react-query';
 import { calculateMonthlyTotals, formatAmount } from '../utils/formatters';

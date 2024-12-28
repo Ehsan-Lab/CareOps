@@ -5,6 +5,12 @@
 
 import { create } from 'zustand';
 import { Beneficiary, Donor, Donation, Payment, FeedingRound, TreasuryCategory, Transaction } from '../types';
+import { DocumentSnapshot } from 'firebase/firestore';
+
+interface PaginatedFeedingRounds {
+  rounds: FeedingRound[];
+  lastDoc: DocumentSnapshot | null;
+}
 
 interface AppState {
   // Connection state
@@ -15,7 +21,7 @@ interface AppState {
   beneficiaries: Beneficiary[];
   donors: Donor[];
   donations: Donation[];
-  feedingRounds: FeedingRound[];
+  feedingRounds: PaginatedFeedingRounds;
   treasuryCategories: TreasuryCategory[];
   payments: Payment[];
   transactions: Transaction[];
@@ -24,7 +30,7 @@ interface AppState {
   setBeneficiaries: (beneficiaries: Beneficiary[]) => void;
   setDonors: (donors: Donor[]) => void;
   setDonations: (donations: Donation[]) => void;
-  setFeedingRounds: (rounds: FeedingRound[]) => void;
+  setFeedingRounds: (feedingRounds: PaginatedFeedingRounds) => void;
   setTreasuryCategories: (categories: TreasuryCategory[]) => void;
   setPayments: (payments: Payment[]) => void;
   setTransactions: (transactions: Transaction[]) => void;
@@ -43,7 +49,7 @@ export const useStore = create<AppState>((set) => ({
   beneficiaries: [],
   donors: [],
   donations: [],
-  feedingRounds: [],
+  feedingRounds: { rounds: [], lastDoc: null },
   treasuryCategories: [],
   payments: [],
   transactions: [],

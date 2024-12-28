@@ -7,12 +7,12 @@
 import React, { useMemo } from 'react';
 import { Card, CardContent, Typography, Box, CircularProgress, Alert, Grid } from '@mui/material';
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   PieChart, Pie, Cell, LineChart, Line, ResponsiveContainer
 } from 'recharts';
 import { format, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
-import { useFirebaseQuery } from '../hooks/useFirebaseQuery';
-import { Donation, FeedingRound, Beneficiary } from '../types';
+import { useAllData } from '../hooks/useFirebaseQuery';
+import { FeedingRound } from '../types';
 import { DocumentSnapshot } from 'firebase/firestore';
 
 // Chart colors
@@ -23,21 +23,66 @@ interface PaginatedFeedingRounds {
   lastDoc: DocumentSnapshot | null;
 }
 
+interface Donor {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  status: string;
+}
+
+interface Donation {
+  id: string;
+  date: string;
+  amount: number;
+  donorId: string;
+  status: string;
+  description: string;
+}
+
+interface Beneficiary {
+  id: string;
+  name: string;
+  status: string;
+  supportType: string;
+  phone: string;
+  address: string;
+}
+
+// Type guard for Donation
+const isDonation = (d: unknown): d is Donation => {
+  return d !== null && typeof d === 'object' && 
+    'date' in d && typeof (d as Donation).date === 'string' && 
+    'amount' in d && typeof (d as Donation).amount === 'number' && 
+    'donorId' in d && typeof (d as Donation).donorId === 'string';
+};
+
+// Type guard for Beneficiary
+const isBeneficiary = (b: unknown): b is Beneficiary => {
+  return b !== null && typeof b === 'object' && 
+    'status' in b && typeof (b as Beneficiary).status === 'string';
+};
+
+// Type guard for FeedingRound
+const isFeedingRound = (fr: unknown): fr is FeedingRound => {
+  return fr !== null && typeof fr === 'object' && 
+    'status' in fr && typeof (fr as FeedingRound).status === 'string' && 
+    ['PENDING', 'IN_PROGRESS', 'COMPLETED'].includes((fr as FeedingRound).status);
+};
+
 /**
  * @component
  * @description Main dashboard component showing key metrics and visualizations
  */
 const Dashboard: React.FC = () => {
   // Fetch data using our custom Firebase hook
+  const { data, isLoading, error } = useAllData();
   const {
-    isLoading,
-    error,
-    donors,
-    donations,
-    feedingRounds,
-    beneficiaries,
-    treasuryCategories
-  } = useFirebaseQuery();
+    donors = [] as Donor[],
+    donations = [] as Donation[],
+    feedingRounds = { rounds: [], lastDoc: null } as PaginatedFeedingRounds,
+    beneficiaries = [] as Beneficiary[]
+  } = data || {};
 
   // Calculate statistics and prepare chart data
   const stats = useMemo(() => {
@@ -50,35 +95,60 @@ const Dashboard: React.FC = () => {
     const monthEnd = endOfMonth(now);
 
     // Active donors this month
+    const validDonations = donations.filter(isDonation);
     const activeDonorsThisMonth = new Set(
-      donations
-        .filter(d => isWithinInterval(new Date(d.date), { start: monthStart, end: monthEnd }))
+      validDonations
+        .filter(d => {
+          try {
+            return isWithinInterval(new Date(d.date), { start: monthStart, end: monthEnd });
+          } catch {
+            console.warn('Invalid date in donation:', d);
+            return false;
+          }
+        })
         .map(d => d.donorId)
     ).size;
 
     // Total donations this month
-    const donationsThisMonth = donations
-      .filter(d => isWithinInterval(new Date(d.date), { start: monthStart, end: monthEnd }))
+    const donationsThisMonth = validDonations
+      .filter(d => {
+        try {
+          return isWithinInterval(new Date(d.date), { start: monthStart, end: monthEnd });
+        } catch {
+          console.warn('Invalid date in donation:', d);
+          return false;
+        }
+      })
       .reduce((sum, d) => sum + d.amount, 0);
 
     // Active beneficiaries
-    const activeBeneficiaries = beneficiaries.filter(b => b.status === 'ACTIVE').length;
+    const validBeneficiaries = beneficiaries.filter(isBeneficiary);
+    const activeBeneficiaries = validBeneficiaries
+      .filter(b => b.status === 'ACTIVE')
+      .length;
 
-    // Completed feeding rounds this month
-    const completedFeedingRounds = feedingRounds.rounds.filter(
-      (fr: FeedingRound) => fr.status === 'COMPLETED' && 
-      isWithinInterval(new Date(fr.date), { start: monthStart, end: monthEnd })
-    ).length;
+    // Validate and count feeding rounds
+    const validFeedingRounds = feedingRounds.rounds.filter(isFeedingRound);
+
+    // Completed feeding rounds
+    const completedFeedingRounds = validFeedingRounds
+      .filter(fr => fr.status === 'COMPLETED')
+      .length;
+
+    // Upcoming feeding rounds (both PENDING and IN_PROGRESS)
+    const upcomingFeedingRounds = validFeedingRounds
+      .filter(fr => fr.status === 'PENDING' || fr.status === 'IN_PROGRESS')
+      .length;
 
     return {
       totalDonors: donors.length,
       activeDonorsThisMonth,
       totalBeneficiaries: beneficiaries.length,
       activeBeneficiaries,
-      totalDonations: donations.reduce((sum, d) => sum + d.amount, 0),
+      totalDonations: validDonations.reduce((sum, d) => sum + d.amount, 0),
       donationsThisMonth,
       completedFeedingRounds,
-      upcomingFeedingRounds: feedingRounds.rounds.filter((fr: FeedingRound) => fr.status === 'PENDING').length
+      upcomingFeedingRounds
     };
   }, [donors, donations, feedingRounds?.rounds, beneficiaries]);
 
@@ -86,6 +156,7 @@ const Dashboard: React.FC = () => {
   const monthlyDonationsData = useMemo(() => {
     if (!donations) return [];
 
+    const validDonations = donations.filter(isDonation);
     const last6Months = Array.from({ length: 6 }, (_, i) => {
       const date = new Date();
       date.setMonth(date.getMonth() - i);
@@ -98,7 +169,7 @@ const Dashboard: React.FC = () => {
 
     return last6Months.map(({ month, start, end }) => ({
       month,
-      amount: donations
+      amount: validDonations
         .filter(d => isWithinInterval(new Date(d.date), { start, end }))
         .reduce((sum, d) => sum + d.amount, 0)
     }));
