@@ -15,7 +15,7 @@ const Layout: React.FC = () => {
     { name: 'Feeding Rounds', href: '/feeding-rounds', icon: Utensils },
     { name: 'Treasury', href: '/treasury', icon: Wallet },
     { name: 'Beneficiaries', href: '/beneficiaries', icon: UserCheck },
-    { name: 'Payment Requests', href: '/payment-requests', icon: FileText },
+    { name: 'Payments', href: '/payments', icon: FileText },
     { name: 'Transactions', href: '/transactions', icon: DollarSign }
   ];
 

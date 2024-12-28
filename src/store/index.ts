@@ -4,119 +4,62 @@
  */
 
 import { create } from 'zustand';
-import { Donor, Donation, FeedingRound, TreasuryCategory, Beneficiary, Payment } from '../types';
-import { PaymentRequest } from '../types/paymentRequest';
-import { DocumentSnapshot } from 'firebase/firestore';
+import { Beneficiary, Donor, Donation, Payment, FeedingRound, TreasuryCategory, Transaction } from '../types';
 
-/**
- * @interface AppState
- * @description Defines the structure and actions of the global application state
- */
 interface AppState {
-  /** Array of all donors in the system */
-  donors: Donor[];
-  /** Array of all donations received */
-  donations: Donation[];
-  /** Array of all feeding rounds/events */
-  feedingRounds: FeedingRound[];
-  /** Array of treasury categories for financial organization */
-  treasuryCategories: TreasuryCategory[];
-  /** Array of beneficiaries receiving aid */
+  // Connection state
+  isOnline: boolean;
+  setOnline: (status: boolean) => void;
+
+  // Data
   beneficiaries: Beneficiary[];
-  /** Array of payments made */
+  donors: Donor[];
+  donations: Donation[];
+  feedingRounds: FeedingRound[];
+  treasuryCategories: TreasuryCategory[];
   payments: Payment[];
-  /** Array of pending payment requests */
-  paymentRequests: PaymentRequest[];
+  transactions: Transaction[];
 
-  /**
-   * Updates the donors list in the global state
-   * @param donors - New array of donors to set
-   */
-  setDonors: (donors: Donor[]) => void;
-
-  /**
-   * Updates the donations list in the global state
-   * @param donations - New array of donations to set
-   */
-  setDonations: (donations: Donation[]) => void;
-
-  /**
-   * Updates the feeding rounds list in the global state
-   * @param rounds - New array of feeding rounds to set
-   */
-  setFeedingRounds: (rounds: FeedingRound[]) => void;
-
-  /**
-   * Updates the treasury categories list in the global state
-   * @param categories - New array of treasury categories to set
-   */
-  setTreasuryCategories: (categories: TreasuryCategory[]) => void;
-
-  /**
-   * Updates the beneficiaries list in the global state
-   * @param beneficiaries - New array of beneficiaries to set
-   */
+  // Actions
   setBeneficiaries: (beneficiaries: Beneficiary[]) => void;
-
-  /**
-   * Updates the payments list in the global state
-   * @param payments - New array of payments to set
-   */
+  setDonors: (donors: Donor[]) => void;
+  setDonations: (donations: Donation[]) => void;
+  setFeedingRounds: (rounds: FeedingRound[]) => void;
+  setTreasuryCategories: (categories: TreasuryCategory[]) => void;
   setPayments: (payments: Payment[]) => void;
+  setTransactions: (transactions: Transaction[]) => void;
 
-  /**
-   * Updates the payment requests list in the global state
-   * @param requests - New array of payment requests to set
-   */
-  setPaymentRequests: (requests: PaymentRequest[]) => void;
+  // UI State
+  sidebarOpen: boolean;
+  setSidebarOpen: (open: boolean) => void;
 }
 
-interface PaginatedFeedingRounds {
-  rounds: any[];
-  lastDoc: DocumentSnapshot | null;
-}
+export const useStore = create<AppState>((set) => ({
+  // Connection state
+  isOnline: true,
+  setOnline: (status) => set({ isOnline: status }),
 
-interface Store {
-  beneficiaries: any[];
-  donors: any[];
-  donations: any[];
-  feedingRounds: PaginatedFeedingRounds;
-  treasuryCategories: any[];
-  payments: any[];
-  paymentRequests: any[];
-  transactions: any[];
-  setBeneficiaries: (beneficiaries: any[]) => void;
-  setDonors: (donors: any[]) => void;
-  setDonations: (donations: any[]) => void;
-  setFeedingRounds: (feedingRounds: PaginatedFeedingRounds) => void;
-  setTreasuryCategories: (categories: any[]) => void;
-  setPayments: (payments: any[]) => void;
-  setPaymentRequests: (requests: any[]) => void;
-  setTransactions: (transactions: any[]) => void;
-}
-
-/**
- * @constant
- * @description Creates a Zustand store with the defined AppState interface
- * @returns A hook that can be used to access and modify the global state
- */
-export const useStore = create<Store>((set) => ({
+  // Data
   beneficiaries: [],
   donors: [],
   donations: [],
-  feedingRounds: { rounds: [], lastDoc: null },
+  feedingRounds: [],
   treasuryCategories: [],
   payments: [],
-  paymentRequests: [],
   transactions: [],
+
+  // Actions
   setBeneficiaries: (beneficiaries) => set({ beneficiaries }),
   setDonors: (donors) => set({ donors }),
   setDonations: (donations) => set({ donations }),
   setFeedingRounds: (feedingRounds) => set({ feedingRounds }),
   setTreasuryCategories: (treasuryCategories) => set({ treasuryCategories }),
   setPayments: (payments) => set({ payments }),
-  setPaymentRequests: (paymentRequests) => set({ paymentRequests }),
-  setTransactions: (transactions) => set({ transactions })
+  setTransactions: (transactions) => set({ transactions }),
+
+  // UI State
+  sidebarOpen: true,
+  setSidebarOpen: (open) => set({ sidebarOpen: open }),
 }));
 
 // Development environment state logger

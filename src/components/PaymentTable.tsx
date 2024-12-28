@@ -1,11 +1,9 @@
 import React from 'react';
-import { ChevronDown, ChevronUp, Clock, Trash2, CheckCircle, XCircle } from 'lucide-react';
-import { Payment, PaymentStatus, PaymentType } from '../types';
-import { formatCurrency, formatDate, formatDateTime } from '../utils/formatters';
-import { useStore } from '../store';
+import { ChevronDown, ChevronUp, Clock, CheckCircle, XCircle } from 'lucide-react';
+import { Payment, PaymentStatus } from '../types';
+import { formatCurrency, formatDate } from '../utils/formatters';
 import { paymentServices } from '../services/firebase/paymentService';
 import { useQueryClient } from '@tanstack/react-query';
-import { transactionServices } from '../services/firebase/transactionService';
 
 interface PaymentTableProps {
   payments: Payment[];
@@ -37,16 +35,6 @@ export function PaymentTable({
     try {
       setUpdatingStatus(payment.id);
       await paymentServices.updateStatus(payment.id, newStatus);
-      
-      // Record the status change transaction
-      await transactionServices.recordTransaction({
-        type: 'STATUS_UPDATE',
-        amount: payment.amount,
-        description: `Payment status updated to ${newStatus} for ${getBeneficiaryName(payment.beneficiaryId)}`,
-        category: 'PAYMENT_STATUS',
-        reference: payment.id
-      });
-
       await queryClient.invalidateQueries({ queryKey: ['all-data'] });
     } catch (error) {
       console.error('Error updating payment status:', error);
@@ -119,6 +107,8 @@ export function PaymentTable({
               className="absolute left-4 top-1/2 -mt-2 h-4 w-4 rounded border-gray-300"
               checked={selectedPayments.length === payments.length}
               onChange={(e) => onSelectAll(e.target.checked)}
+              title="Select all payments"
+              aria-label="Select all payments"
             />
           </th>
           <th className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900">
@@ -156,6 +146,8 @@ export function PaymentTable({
                 className="absolute left-4 top-1/2 -mt-2 h-4 w-4 rounded border-gray-300"
                 checked={selectedPayments.includes(payment.id)}
                 onChange={(e) => onSelectPayment(payment.id, e.target.checked)}
+                title={`Select payment ${payment.id}`}
+                aria-label={`Select payment ${payment.id}`}
               />
             </td>
             <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900">
