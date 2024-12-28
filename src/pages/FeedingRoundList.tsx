@@ -7,15 +7,22 @@ import { FeedingRoundPhotosModal } from '../components/modals/FeedingRoundPhotos
 import { feedingRoundServices } from '../services/firebase/feedingRoundService';
 import { format } from 'date-fns';
 import { FeedingRound } from '../types';
-import { DocumentSnapshot } from 'firebase/firestore';
+import { DocumentSnapshot, DocumentData } from 'firebase/firestore';
 
 interface PaginatedFeedingRounds {
   rounds: FeedingRound[];
-  lastDoc: DocumentSnapshot | null;
+  lastDoc: DocumentSnapshot<DocumentData> | null;
+}
+
+interface FirebaseQueryResult {
+  feedingRounds: PaginatedFeedingRounds;
+  isLoading: boolean;
+  error: Error | null;
 }
 
 const FeedingRoundList: React.FC = () => {
-  const { feedingRounds = { rounds: [], lastDoc: null }, isLoading, error } = useFirebaseQuery();
+  const { feedingRounds, isLoading, error } = useFirebaseQuery() as FirebaseQueryResult;
+  console.log('FeedingRoundList: Initial feedingRounds:', feedingRounds);
   const [isModalOpen, setIsModalOpen] = React.useState(false);
   const [isPhotosModalOpen, setIsPhotosModalOpen] = React.useState(false);
   const [selectedRound, setSelectedRound] = React.useState<FeedingRound | null>(null);
@@ -30,41 +37,100 @@ const FeedingRoundList: React.FC = () => {
 
   // Validate and transform feeding rounds data
   const validFeedingRounds = React.useMemo(() => {
-    return feedingRounds.rounds?.filter(round => round && typeof round === 'object') ?? [];
-  }, [feedingRounds.rounds]);
+    console.log('FeedingRoundList: Processing feedingRounds:', feedingRounds);
+    
+    if (!feedingRounds?.rounds) {
+      console.warn('FeedingRoundList: No rounds array in feedingRounds:', feedingRounds);
+      return [];
+    }
+
+    const filtered = feedingRounds.rounds.filter((round: FeedingRound) => {
+      // Basic validation of required fields
+      if (!round || typeof round !== 'object') {
+        console.warn('FeedingRoundList: Invalid round object:', round);
+        return false;
+      }
+      if (!round.id || typeof round.id !== 'string') {
+        console.warn('FeedingRoundList: Missing or invalid id:', round);
+        return false;
+      }
+      if (!round.categoryId || typeof round.categoryId !== 'string') {
+        console.warn('FeedingRoundList: Missing or invalid categoryId:', round);
+        return false;
+      }
+      
+      // Ensure date is valid
+      try {
+        new Date(round.date).toISOString();
+      } catch {
+        console.warn('FeedingRoundList: Invalid date, using current date:', round);
+        round.date = new Date().toISOString().split('T')[0];
+      }
+      
+      // Ensure numeric fields are valid
+      if (typeof round.allocatedAmount !== 'number') {
+        console.warn('FeedingRoundList: Invalid allocatedAmount:', round);
+        round.allocatedAmount = 0;
+      }
+      if (typeof round.unitPrice !== 'number') {
+        console.warn('FeedingRoundList: Invalid unitPrice:', round);
+        round.unitPrice = 0;
+      }
+      
+      // Ensure arrays are valid
+      if (!Array.isArray(round.photos)) {
+        console.warn('FeedingRoundList: Invalid photos array:', round);
+        round.photos = [];
+      }
+      
+      // Ensure strings are valid
+      round.description = round.description || '';
+      round.observations = round.observations || '';
+      round.specialCircumstances = round.specialCircumstances || '';
+      round.driveLink = round.driveLink || '';
+      
+      // Ensure status is valid
+      if (!['PENDING', 'IN_PROGRESS', 'COMPLETED'].includes(round.status)) {
+        console.warn('FeedingRoundList: Invalid status:', round);
+        round.status = 'PENDING';
+      }
+      
+      return true;
+    });
+
+    console.log('FeedingRoundList: Filtered rounds:', filtered.length);
+    return filtered;
+  }, [feedingRounds]);
 
   const sortedRounds = React.useMemo(() => {
+    console.log('FeedingRoundList: Sorting rounds, count:', validFeedingRounds.length);
     if (!validFeedingRounds.length) return [];
     
     return [...validFeedingRounds].sort((a, b) => {
       let comparison = 0;
       switch (sortField) {
         case 'date':
-          comparison = new Date(a.date).getTime() - new Date(b.date).getTime();
+          comparison = new Date(a.date || 0).getTime() - new Date(b.date || 0).getTime();
           break;
         case 'allocatedAmount':
-          const amountA = typeof a.allocatedAmount === 'number' ? a.allocatedAmount : 0;
-          const amountB = typeof b.allocatedAmount === 'number' ? b.allocatedAmount : 0;
-          comparison = amountA - amountB;
+          comparison = (a.allocatedAmount || 0) - (b.allocatedAmount || 0);
           break;
         case 'unitPrice':
-          const priceA = typeof a.unitPrice === 'number' ? a.unitPrice : 0;
-          const priceB = typeof b.unitPrice === 'number' ? b.unitPrice : 0;
-          comparison = priceA - priceB;
+          comparison = (a.unitPrice || 0) - (b.unitPrice || 0);
           break;
-        case 'units':
-          const unitsA = (typeof a.unitPrice === 'number' && a.unitPrice > 0) ? 
-            (typeof a.allocatedAmount === 'number' ? a.allocatedAmount / a.unitPrice : 0) : 0;
-          const unitsB = (typeof b.unitPrice === 'number' && b.unitPrice > 0) ? 
-            (typeof b.allocatedAmount === 'number' ? b.allocatedAmount / b.unitPrice : 0) : 0;
+        case 'units': {
+          const unitsA = a.unitPrice > 0 ? (a.allocatedAmount || 0) / a.unitPrice : 0;
+          const unitsB = b.unitPrice > 0 ? (b.allocatedAmount || 0) / b.unitPrice : 0;
           comparison = unitsA - unitsB;
           break;
+        }
       }
       return sortDirection === 'asc' ? comparison : -comparison;
     });
   }, [validFeedingRounds, sortField, sortDirection]);
 
   React.useEffect(() => {
+    console.log('FeedingRoundList: useEffect - lastDoc update:', feedingRounds.lastDoc);
     if (feedingRounds.lastDoc) {
       setLastDoc(feedingRounds.lastDoc);
       setHasMore(true);

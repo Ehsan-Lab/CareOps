@@ -66,6 +66,8 @@ export interface FeedingRound {
   createdAt?: Timestamp;
   /** Timestamp of when the record was last updated */
   updatedAt?: Timestamp;
+  /** Array of photo URLs associated with this feeding round */
+  photos?: string[];
 }
 
 /**
