@@ -42,8 +42,13 @@ export const DonationModal: React.FC<DonationModalProps> = ({ isOpen, onClose })
         donorId: String(data.donorId),
         categoryId: String(data.categoryId)
       });
-      queryClient.invalidateQueries({ queryKey: ['donations'] });
-      queryClient.invalidateQueries({ queryKey: ['treasury'] });
+      
+      // Invalidate and refetch all relevant queries
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['all-data'] }),
+        queryClient.refetchQueries({ queryKey: ['all-data'] })
+      ]);
+      
       onClose();
     } catch (error) {
       console.error('Error saving donation:', error);

@@ -1,3 +1,9 @@
+/**
+ * @module FirebaseServices
+ * @description Services for interacting with Firebase Firestore database
+ * Provides CRUD operations for donors, donations, feeding rounds, treasury, beneficiaries, and payments
+ */
+
 import { 
   collection, 
   doc,
@@ -17,7 +23,7 @@ import { db } from '../config/firebase';
 import { Donor, Donation, FeedingRound, TreasuryCategory, Beneficiary, Payment } from '../types';
 import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 
-// Collection references
+/** Collection names in Firestore */
 const DONORS = 'donors';
 const DONATIONS = 'donations';
 const FEEDING_ROUNDS = 'feedingRounds';
@@ -25,8 +31,16 @@ const TREASURY = 'treasury';
 const BENEFICIARIES = 'beneficiaries';
 const PAYMENTS = 'payments';
 
-// Donor Services
+/**
+ * @namespace donorServices
+ * @description Services for managing donor data in Firestore
+ */
 export const donorServices = {
+  /**
+   * Retrieves all donors from the database
+   * @returns {Promise<Donor[]>} Array of donor objects
+   * @throws {Error} If the Firebase operation fails
+   */
   getAll: async () => {
     try {
       const querySnapshot = await getDocs(collection(db, DONORS));
@@ -42,6 +56,12 @@ export const donorServices = {
     }
   },
   
+  /**
+   * Creates a new donor in the database
+   * @param {Omit<Donor, 'id'>} data - Donor data without ID
+   * @returns {Promise<DocumentReference>} Reference to the created document
+   * @throws {Error} If saving the donor fails
+   */
   create: async (data: Omit<Donor, 'id'>) => {
     try {
       const docRef = await addDoc(collection(db, DONORS), {
@@ -56,6 +76,12 @@ export const donorServices = {
     }
   },
   
+  /**
+   * Updates an existing donor's information
+   * @param {string} id - Donor ID
+   * @param {Partial<Donor>} data - Partial donor data to update
+   * @throws {Error} If updating the donor fails
+   */
   update: async (id: string, data: Partial<Donor>) => {
     try {
       const docRef = doc(db, DONORS, id);
@@ -69,6 +95,11 @@ export const donorServices = {
     }
   },
   
+  /**
+   * Deletes a donor from the database
+   * @param {string} id - Donor ID
+   * @throws {Error} If deleting the donor fails
+   */
   delete: async (id: string) => {
     try {
       const docRef = doc(db, DONORS, id);
@@ -80,16 +111,33 @@ export const donorServices = {
   }
 };
 
-// Donation Services
+/**
+ * @interface CreateDonationData
+ * @description Data required to create a new donation
+ */
 interface CreateDonationData {
+  /** ID of the donor making the donation */
   donorId: string;
+  /** Amount being donated */
   amount: number;
+  /** Purpose of the donation */
   purpose: string;
+  /** ID of the treasury category receiving the donation */
   categoryId: string;
+  /** Date of the donation */
   date: string;
 }
 
+/**
+ * @namespace donationServices
+ * @description Services for managing donation data in Firestore
+ */
 export const donationServices = {
+  /**
+   * Retrieves all donations from the database
+   * @returns {Promise<Donation[]>} Array of donation objects
+   * @throws {Error} If fetching donations fails
+   */
   getAll: async () => {
     try {
       const querySnapshot = await getDocs(collection(db, DONATIONS));
@@ -103,6 +151,11 @@ export const donationServices = {
     }
   },
 
+  /**
+   * Creates a new donation and updates treasury balance in a transaction
+   * @param {CreateDonationData} data - Donation data
+   * @throws {Error} If creating the donation fails or treasury category not found
+   */
   create: async (data: CreateDonationData) => {
     try {
       await runTransaction(db, async (transaction) => {
@@ -141,8 +194,16 @@ export const donationServices = {
   }
 };
 
-// Feeding Round Services
+/**
+ * @namespace feedingRoundServices
+ * @description Services for managing feeding round data in Firestore
+ */
 export const feedingRoundServices = {
+  /**
+   * Retrieves all feeding rounds from the database
+   * @returns {Promise<FeedingRound[]>} Array of feeding round objects
+   * @throws {Error} If fetching feeding rounds fails
+   */
   getAll: async () => {
     try {
       const querySnapshot = await getDocs(collection(db, FEEDING_ROUNDS));
@@ -156,6 +217,11 @@ export const feedingRoundServices = {
     }
   },
 
+  /**
+   * Creates a new feeding round and updates treasury balance in a transaction
+   * @param {Omit<FeedingRound, 'id'>} data - Feeding round data without ID
+   * @throws {Error} If creating the feeding round fails or insufficient funds
+   */
   create: async (data: Omit<FeedingRound, 'id'>) => {
     try {
       await runTransaction(db, async (transaction) => {
@@ -192,6 +258,12 @@ export const feedingRoundServices = {
     }
   },
 
+  /**
+   * Updates an existing feeding round's information
+   * @param {string} id - Feeding round ID
+   * @param {Partial<FeedingRound>} data - Partial feeding round data to update
+   * @throws {Error} If updating the feeding round fails
+   */
   update: async (id: string, data: Partial<FeedingRound>) => {
     try {
       const docRef = doc(db, FEEDING_ROUNDS, id);
@@ -205,6 +277,12 @@ export const feedingRoundServices = {
     }
   },
 
+  /**
+   * Updates the status of a feeding round
+   * @param {string} id - Feeding round ID
+   * @param {'PENDING' | 'IN_PROGRESS' | 'COMPLETED'} status - New status
+   * @throws {Error} If updating the status fails
+   */
   updateStatus: async (id: string, status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED') => {
     try {
       const docRef = doc(db, FEEDING_ROUNDS, id);
@@ -218,6 +296,11 @@ export const feedingRoundServices = {
     }
   },
 
+  /**
+   * Deletes a feeding round and refunds the allocated amount to treasury
+   * @param {string} id - Feeding round ID
+   * @throws {Error} If deleting the feeding round fails or refund fails
+   */
   delete: async (id: string) => {
     try {
       await runTransaction(db, async (transaction) => {
@@ -328,65 +411,55 @@ export const feedingRoundServices = {
   }
 };
 
-// Treasury Services
+/**
+ * @namespace treasuryServices
+ * @description Services for managing treasury categories and balances in Firestore
+ */
 export const treasuryServices = {
+  /**
+   * Retrieves all treasury categories from the database
+   * @returns {Promise<TreasuryCategory[]>} Array of treasury category objects
+   * @throws {Error} If fetching treasury categories fails
+   */
   getAll: async () => {
     try {
       const querySnapshot = await getDocs(collection(db, TREASURY));
-      const categories = querySnapshot.docs.map(doc => ({
+      return querySnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
-      console.log('Raw categories from Firebase:', categories);
-      return categories;
     } catch (error) {
       console.error('Error fetching treasury categories:', error);
       throw error;
     }
   },
 
-  create: async (data: { name: string; balance: number }) => {
+  /**
+   * Creates a new treasury category
+   * @param {Omit<TreasuryCategory, 'id'>} data - Treasury category data without ID
+   * @returns {Promise<DocumentReference>} Reference to the created document
+   * @throws {Error} If creating the treasury category fails
+   */
+  create: async (data: Omit<TreasuryCategory, 'id'>) => {
     try {
-      await addDoc(collection(db, TREASURY), {
+      const docRef = await addDoc(collection(db, TREASURY), {
         ...data,
-        createdAt: Timestamp.now(),
-        updatedAt: Timestamp.now()
+        balance: 0,
+        createdAt: Timestamp.now()
       });
+      return docRef;
     } catch (error) {
       console.error('Error creating treasury category:', error);
       throw error;
     }
   },
 
-  adjustBalance: async (id: string, amount: number, isDeduction: boolean = false) => {
-    try {
-      const docRef = doc(db, TREASURY, id);
-      await runTransaction(db, async (transaction) => {
-        const doc = await transaction.get(docRef);
-        if (!doc.exists()) {
-          throw new Error('Treasury category not found');
-        }
-
-        const currentBalance = doc.data().balance || 0;
-        // If it's a deduction, automatically make the amount negative
-        const adjustedAmount = isDeduction ? -Math.abs(amount) : amount;
-        const newBalance = currentBalance + adjustedAmount;
-        
-        if (newBalance < 0) {
-          throw new Error('Insufficient funds');
-        }
-
-        transaction.update(docRef, {
-          balance: newBalance,
-          updatedAt: Timestamp.now()
-        });
-      });
-    } catch (error) {
-      console.error('Error adjusting treasury balance:', error);
-      throw error;
-    }
-  },
-
+  /**
+   * Updates an existing treasury category's information
+   * @param {string} id - Treasury category ID
+   * @param {Partial<TreasuryCategory>} data - Partial treasury category data to update
+   * @throws {Error} If updating the treasury category fails
+   */
   update: async (id: string, data: Partial<TreasuryCategory>) => {
     try {
       const docRef = doc(db, TREASURY, id);
@@ -400,6 +473,11 @@ export const treasuryServices = {
     }
   },
 
+  /**
+   * Deletes a treasury category
+   * @param {string} id - Treasury category ID
+   * @throws {Error} If deleting the treasury category fails
+   */
   delete: async (id: string) => {
     try {
       const docRef = doc(db, TREASURY, id);
@@ -411,35 +489,55 @@ export const treasuryServices = {
   }
 };
 
-// Beneficiary Services
+/**
+ * @namespace beneficiaryServices
+ * @description Services for managing beneficiary data in Firestore
+ */
 export const beneficiaryServices = {
+  /**
+   * Retrieves all beneficiaries from the database
+   * @returns {Promise<Beneficiary[]>} Array of beneficiary objects
+   * @throws {Error} If fetching beneficiaries fails
+   */
   getAll: async () => {
     try {
       const querySnapshot = await getDocs(collection(db, BENEFICIARIES));
       return querySnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
-      })) as Beneficiary[];
+      }));
     } catch (error) {
       console.error('Error fetching beneficiaries:', error);
       throw error;
     }
   },
 
-  create: async (data: Omit<Beneficiary, 'id' | 'status' | 'createdAt' | 'updatedAt'>) => {
+  /**
+   * Creates a new beneficiary
+   * @param {Omit<Beneficiary, 'id'>} data - Beneficiary data without ID
+   * @returns {Promise<DocumentReference>} Reference to the created document
+   * @throws {Error} If creating the beneficiary fails
+   */
+  create: async (data: Omit<Beneficiary, 'id'>) => {
     try {
-      await addDoc(collection(db, BENEFICIARIES), {
+      const docRef = await addDoc(collection(db, BENEFICIARIES), {
         ...data,
         status: 'ACTIVE',
-        createdAt: Timestamp.now(),
-        updatedAt: Timestamp.now()
+        createdAt: Timestamp.now()
       });
+      return docRef;
     } catch (error) {
       console.error('Error creating beneficiary:', error);
       throw error;
     }
   },
 
+  /**
+   * Updates an existing beneficiary's information
+   * @param {string} id - Beneficiary ID
+   * @param {Partial<Beneficiary>} data - Partial beneficiary data to update
+   * @throws {Error} If updating the beneficiary fails
+   */
   update: async (id: string, data: Partial<Beneficiary>) => {
     try {
       const docRef = doc(db, BENEFICIARIES, id);
@@ -453,39 +551,74 @@ export const beneficiaryServices = {
     }
   },
 
-  delete: async (id: string) => {
+  /**
+   * Updates a beneficiary's status
+   * @param {string} id - Beneficiary ID
+   * @param {'ACTIVE' | 'INACTIVE'} status - New status
+   * @throws {Error} If updating the status fails
+   */
+  updateStatus: async (id: string, status: 'ACTIVE' | 'INACTIVE') => {
     try {
       const docRef = doc(db, BENEFICIARIES, id);
       await updateDoc(docRef, {
-        status: 'INACTIVE',
+        status,
         updatedAt: Timestamp.now()
       });
     } catch (error) {
-      console.error('Error deactivating beneficiary:', error);
+      console.error('Error updating beneficiary status:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Deletes a beneficiary
+   * @param {string} id - Beneficiary ID
+   * @throws {Error} If deleting the beneficiary fails
+   */
+  delete: async (id: string) => {
+    try {
+      const docRef = doc(db, BENEFICIARIES, id);
+      await deleteDoc(docRef);
+    } catch (error) {
+      console.error('Error deleting beneficiary:', error);
       throw error;
     }
   }
 };
 
-// Payment Services
+/**
+ * @namespace paymentServices
+ * @description Services for managing payment data in Firestore
+ */
 export const paymentServices = {
+  /**
+   * Retrieves all payments from the database
+   * @returns {Promise<Payment[]>} Array of payment objects
+   * @throws {Error} If fetching payments fails
+   */
   getAll: async () => {
     try {
       const querySnapshot = await getDocs(collection(db, PAYMENTS));
       return querySnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
-      })) as Payment[];
+      }));
     } catch (error) {
       console.error('Error fetching payments:', error);
       throw error;
     }
   },
 
-  create: async (data: Omit<Payment, 'id' | 'status' | 'createdAt' | 'updatedAt'>) => {
+  /**
+   * Creates a new payment and updates treasury balance in a transaction
+   * @param {Omit<Payment, 'id' | 'status'>} data - Payment data without ID and status
+   * @returns {Promise<void>}
+   * @throws {Error} If creating the payment fails or insufficient funds
+   */
+  create: async (data: Omit<Payment, 'id' | 'status'>) => {
     try {
       await runTransaction(db, async (transaction) => {
-        // Check treasury balance
+        // First, do all reads
         const categoryRef = doc(db, TREASURY, data.categoryId);
         const categoryDoc = await transaction.get(categoryRef);
         
@@ -495,19 +628,19 @@ export const paymentServices = {
 
         const currentBalance = categoryDoc.data().balance || 0;
         if (currentBalance < data.amount) {
-          throw new Error('Insufficient funds in category');
+          throw new Error('Insufficient funds in treasury category');
         }
 
-        // Create payment
+        // Then, do all writes
+        // 1. Create payment
         const paymentRef = doc(collection(db, PAYMENTS));
         transaction.set(paymentRef, {
           ...data,
-          status: 'COMPLETED',
-          createdAt: Timestamp.now(),
-          updatedAt: Timestamp.now()
+          status: 'PENDING',
+          createdAt: Timestamp.now()
         });
 
-        // Update treasury balance
+        // 2. Update treasury balance
         transaction.update(categoryRef, {
           balance: currentBalance - data.amount,
           updatedAt: Timestamp.now()
@@ -519,6 +652,12 @@ export const paymentServices = {
     }
   },
 
+  /**
+   * Updates an existing payment's information
+   * @param {string} id - Payment ID
+   * @param {Partial<Payment>} data - Partial payment data to update
+   * @throws {Error} If updating the payment fails
+   */
   update: async (id: string, data: Partial<Payment>) => {
     try {
       const docRef = doc(db, PAYMENTS, id);
@@ -532,9 +671,34 @@ export const paymentServices = {
     }
   },
 
-  cancel: async (id: string) => {
+  /**
+   * Updates the status of a payment
+   * @param {string} id - Payment ID
+   * @param {'PENDING' | 'COMPLETED' | 'CANCELLED'} status - New status
+   * @throws {Error} If updating the status fails
+   */
+  updateStatus: async (id: string, status: 'PENDING' | 'COMPLETED' | 'CANCELLED') => {
+    try {
+      const docRef = doc(db, PAYMENTS, id);
+      await updateDoc(docRef, {
+        status,
+        updatedAt: Timestamp.now()
+      });
+    } catch (error) {
+      console.error('Error updating payment status:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Deletes a payment and refunds the amount to treasury if not completed
+   * @param {string} id - Payment ID
+   * @throws {Error} If deleting the payment fails or refund fails
+   */
+  delete: async (id: string) => {
     try {
       await runTransaction(db, async (transaction) => {
+        // First, get the payment to know the amount to refund
         const paymentRef = doc(db, PAYMENTS, id);
         const paymentDoc = await transaction.get(paymentRef);
         
@@ -543,34 +707,31 @@ export const paymentServices = {
         }
 
         const paymentData = paymentDoc.data();
-        if (paymentData.status === 'CANCELLED') {
-          throw new Error('Payment already cancelled');
-        }
-
-        // Refund the amount to treasury
-        const categoryRef = doc(db, TREASURY, paymentData.categoryId);
-        const categoryDoc = await transaction.get(categoryRef);
         
-        if (!categoryDoc.exists()) {
-          throw new Error('Treasury category not found');
+        // Only refund if payment was not completed
+        if (paymentData.status !== 'COMPLETED') {
+          // Get the treasury category to refund the amount
+          const categoryRef = doc(db, TREASURY, paymentData.categoryId);
+          const categoryDoc = await transaction.get(categoryRef);
+          
+          if (!categoryDoc.exists()) {
+            throw new Error('Treasury category not found');
+          }
+
+          const currentBalance = categoryDoc.data().balance || 0;
+
+          // Update treasury balance
+          transaction.update(categoryRef, {
+            balance: currentBalance + paymentData.amount,
+            updatedAt: Timestamp.now()
+          });
         }
 
-        const currentBalance = categoryDoc.data().balance || 0;
-
-        // Update payment status
-        transaction.update(paymentRef, {
-          status: 'CANCELLED',
-          updatedAt: Timestamp.now()
-        });
-
-        // Refund amount to treasury
-        transaction.update(categoryRef, {
-          balance: currentBalance + paymentData.amount,
-          updatedAt: Timestamp.now()
-        });
+        // Delete the payment
+        transaction.delete(paymentRef);
       });
     } catch (error) {
-      console.error('Error cancelling payment:', error);
+      console.error('Error deleting payment:', error);
       throw error;
     }
   }

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, Outlet, useLocation, NavLink } from 'react-router-dom';
-import { Heart, Users, Wallet, Utensils, Menu, CircleDollarSign, UserRound, CreditCard, FileText, LogOut } from 'lucide-react';
+import { Heart, Users, Wallet, Utensils, Menu, CircleDollarSign, UserRound, CreditCard, FileText, LogOut, LayoutDashboard, DollarSign, Gift, UserCheck } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 const Layout: React.FC = () => {
@@ -9,14 +9,14 @@ const Layout: React.FC = () => {
   const { signOut } = useAuth();
 
   const navigation = [
+    { name: 'Dashboard', href: '/', icon: LayoutDashboard },
     { name: 'Donors', href: '/donors', icon: Users },
-    { name: 'Donations', href: '/donations', icon: Heart },
+    { name: 'Donations', href: '/donations', icon: Gift },
     { name: 'Feeding Rounds', href: '/feeding-rounds', icon: Utensils },
     { name: 'Treasury', href: '/treasury', icon: Wallet },
-    { name: 'Treasury Categories', href: '/treasury-categories', icon: CircleDollarSign },
-    { name: 'Beneficiaries', href: '/beneficiaries', icon: UserRound },
-    { name: 'Payments', href: '/payments', icon: CreditCard },
-    { name: 'Payment Requests', href: '/payment-requests', icon: FileText },
+    { name: 'Beneficiaries', href: '/beneficiaries', icon: UserCheck },
+    { name: 'Payments', href: '/payments', icon: FileText },
+    { name: 'Transactions', href: '/transactions', icon: DollarSign }
   ];
 
   const isActive = (path: string) => location.pathname === path;
@@ -28,6 +28,7 @@ const Layout: React.FC = () => {
         <button
           onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
           className="text-gray-500 hover:text-gray-600"
+          title="Toggle menu"
         >
           <Menu size={24} />
         </button>
@@ -39,7 +40,7 @@ const Layout: React.FC = () => {
           ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0`}
       >
         <div className="flex h-16 items-center justify-center border-b border-gray-200">
-          <h1 className="text-xl font-bold text-indigo-600">Charity Manager</h1>
+          <h1 className="text-xl font-bold text-indigo-600">Care-Ops</h1>
         </div>
 
         <nav className="mt-5 space-y-1 px-2">

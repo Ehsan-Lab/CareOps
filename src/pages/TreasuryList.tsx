@@ -1,16 +1,18 @@
 import React from 'react';
 import { Wallet, Plus, TrendingUp, TrendingDown } from 'lucide-react';
-import { useStore } from '../store';
 import { TreasuryCategoryModal } from '../components/modals/TreasuryCategoryModal';
-import { treasuryServices } from '../services/firebase';
+import { treasuryServices } from '../services/firebase/treasuryService';
 import { useQueryClient } from '@tanstack/react-query';
+import { useAllData } from '../hooks/useFirebaseQuery';
+import { TreasuryCategory } from '../types';
 
 const TreasuryList: React.FC = () => {
-  const categories = useStore((state) => state.treasuryCategories);
+  const { data, isLoading } = useAllData();
+  const categories = (data?.treasury || []) as TreasuryCategory[];
   const [isAddModalOpen, setIsAddModalOpen] = React.useState(false);
   const queryClient = useQueryClient();
 
-  const handleAdjustBalance = async (id: string, amount: number) => {
+  const handleAdjustBalance = async (id: string) => {
     const adjustmentAmount = parseFloat(
       window.prompt('Enter amount to adjust (use negative for withdrawal):', '0') || '0'
     );
@@ -18,7 +20,7 @@ const TreasuryList: React.FC = () => {
     if (adjustmentAmount) {
       try {
         await treasuryServices.adjustBalance(id, adjustmentAmount);
-        queryClient.invalidateQueries({ queryKey: ['treasury'] });
+        queryClient.invalidateQueries({ queryKey: ['all-data'] });
       } catch (error) {
         console.error('Error adjusting balance:', error);
         alert('Failed to adjust balance. Please try again.');
@@ -32,13 +34,21 @@ const TreasuryList: React.FC = () => {
 
     try {
       await treasuryServices.adjustBalance(id, parseFloat(amount), true);
-      queryClient.invalidateQueries({ queryKey: ['treasury'] });
+      queryClient.invalidateQueries({ queryKey: ['all-data'] });
     } catch (error) {
       alert(error instanceof Error ? error.message : 'Failed to deduct amount');
     }
   };
 
-  const totalBalance = categories.reduce((sum, cat) => sum + cat.balance, 0);
+  const totalBalance = categories.reduce((sum: number, cat: TreasuryCategory) => sum + cat.balance, 0);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -106,7 +116,7 @@ const TreasuryList: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 bg-white">
-                  {categories.map((category) => (
+                  {categories.map((category: TreasuryCategory) => (
                     <tr key={category.id}>
                       <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-6">
                         {category.name}
@@ -118,13 +128,17 @@ const TreasuryList: React.FC = () => {
                         <div className="flex justify-end gap-2">
                           <button
                             className="text-green-600 hover:text-green-900"
-                            onClick={() => handleAdjustBalance(category.id, 1)}
+                            onClick={() => handleAdjustBalance(category.id)}
+                            title="Add funds"
+                            aria-label={`Add funds to ${category.name}`}
                           >
                             <TrendingUp className="h-4 w-4" />
                           </button>
                           <button
                             className="text-red-600 hover:text-red-900"
                             onClick={() => handleDeduct(category.id)}
+                            title="Deduct funds"
+                            aria-label={`Deduct funds from ${category.name}`}
                           >
                             <TrendingDown className="h-4 w-4" />
                           </button>

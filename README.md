@@ -1,90 +1,62 @@
 # Charity Management System
 
-This project is a comprehensive system for managing donations, beneficiaries, payments, and treasury operations in a structured and efficient manner.
+A web application for managing charity operations, including donor management, payment tracking, and beneficiary support.
 
-## Project Status
+## Development Setup
 
-### Completed Milestones
-1. **Donor Management Module**
-   - Fully implemented CRUD operations for managing donor profiles.
+1. Install dependencies:
+```bash
+npm install
+```
 
-2. **Donation Management Module**
-   - Tracks individual donations linked to specific donors and categories.
+2. Create `.env` file with Firebase config:
+```env
+VITE_FIREBASE_API_KEY=your-api-key
+VITE_FIREBASE_AUTH_DOMAIN=your-domain
+VITE_FIREBASE_PROJECT_ID=your-project-id
+VITE_FIREBASE_STORAGE_BUCKET=your-bucket
+VITE_FIREBASE_MESSAGING_SENDER_ID=your-sender-id
+VITE_FIREBASE_APP_ID=your-app-id
+```
 
-3. **Feeding Ground Management Module**
-   - Manages feeding rounds with allocated amounts and treasury deductions.
+3. Start development server:
+```bash
+npm run dev
+```
 
-4. **Treasury Management Module**
-   - Handles categorized funds, ensuring deposits and withdrawals are tracked accurately.
+## Production Deployment (Hostinger)
 
-5. **Representatives Management Module**
-   - Tracks representatives handling payments, including their contact details.
+1. Create `.env.production` with production Firebase config
 
-6. **Payments Management Module**
-   - Implemented payment tracking with validations.
-   - *Note*: The **Add Payment modal** is implemented but still has some errors.
+2. Build and package:
+```bash
+./deploy.sh
+```
 
----
+3. Upload to Hostinger:
+- Log in to Hostinger control panel
+- Go to File Manager
+- Navigate to public_html
+- Upload deploy.zip
+- Extract the files
 
-## Future Work
+4. Configure .htaccess:
+```apache
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+  RewriteRule ^index\.html$ - [L]
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteCond %{REQUEST_FILENAME} !-l
+  RewriteRule . /index.html [L]
+</IfModule>
+```
 
-### Immediate Priorities
-- [ ] **Fix Add Payment Modal Errors**
-   - Ensure proper validations for:
-     - Sufficient treasury balance.
-     - Linking treasury, payee, and category.
-     - Mandatory fields.
-   - Address issues related to incorrect balance deductions or modal crashes.
- - [ ] **Automatically calculate the no of packages in a feeding round**
- - [ ] **Add support for recurring payments and its statuses(Paid, Unpaid)**
- - [ ] **Add support for recurring donations and its statuses(Paid, Unpaid)**
+## Available Scripts
 
-### Planned Enhancements
-1. **Payee Management Enhancements**
-   - Improve autocomplete dropdown for payee selection.
-   - Add support for bulk payee imports.
-
-2. **Dashboard Overview**
-   - Create a dashboard summarizing:
-     - Total donations.
-     - Payments made by category.
-     - Treasury balances.
-     - Feeding round statuses.
-
-3. **Advanced Reporting**
-   - Add export options for generating detailed reports on:
-     - Donations by donor.
-     - Payments by category and representative.
-     - Treasury fund usage.
-
-4. **Notification System**
-   - Notify users about:
-     - Low treasury balances.
-     - Upcoming recurring payments.
-     - Feeding round schedules.
-
-5. **User Roles and Permissions**
-   - Add role-based access controls for:
-     - Administrators.
-     - Data entry staff.
-     - View-only users.
-
-6. **Recurring Payments Automation**
-   - Automate recurring payments for seasonal or regular support.
-
-### Long-Term Goals
-1. **Multi-Tenancy Support**
-   - Allow multiple organizations to use the system with isolated data.
-
-2. **Integration with External Platforms**
-   - Integrate with financial platforms for payment tracking.
-   - Add support for donor communication tools (e.g., emails, SMS).
-
-3. **Mobile Application**
-   - Develop a mobile-friendly interface for quick data entry and monitoring.
-
-4. **AI-Powered Insights**
-   - Use AI to:
-     - Predict funding shortages.
-     - Suggest optimal fund allocation.
-     - Identify high-value donors.
+- `npm run dev` - Development server
+- `npm run build` - Production build
+- `npm run preview` - Preview build
+- `npm run lint` - Run linter
+- `npm run typecheck` - Type checking
