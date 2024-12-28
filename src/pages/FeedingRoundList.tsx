@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import { Utensils, Plus, Play, CheckCircle, Pencil, Trash2, Camera, ImageOff, ChevronDown, ChevronUp } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useFirebaseQuery } from '../hooks/useFirebaseQuery';
+import { useAllData } from '../hooks/useFirebaseQuery';
 import { FeedingRoundModal } from '../components/modals/FeedingRoundModal';
 import { FeedingRoundPhotosModal } from '../components/modals/FeedingRoundPhotosModal';
 import { feedingRoundServices } from '../services/firebase/feedingRoundService';
 import { format } from 'date-fns';
-import { FeedingRound } from '../types';
+import { FeedingRound, Donor, Beneficiary, Donation, Payment, TreasuryCategory, Transaction } from '../types';
 import { DocumentSnapshot, DocumentData } from 'firebase/firestore';
 
 interface PaginatedFeedingRounds {
@@ -14,14 +14,19 @@ interface PaginatedFeedingRounds {
   lastDoc: DocumentSnapshot<DocumentData> | null;
 }
 
-interface FirebaseQueryResult {
+interface AllData {
   feedingRounds: PaginatedFeedingRounds;
-  isLoading: boolean;
-  error: Error | null;
+  donors: Donor[];
+  beneficiaries: Beneficiary[];
+  donations: Donation[];
+  payments: Payment[];
+  treasury: TreasuryCategory[];
+  transactions: { transactions: Transaction[]; lastDoc: DocumentSnapshot | null };
 }
 
 const FeedingRoundList: React.FC = () => {
-  const { feedingRounds, isLoading, error } = useFirebaseQuery() as FirebaseQueryResult;
+  const { data, isLoading, error } = useAllData();
+  const feedingRounds = data?.feedingRounds || { rounds: [], lastDoc: null };
   console.log('FeedingRoundList: Initial feedingRounds:', feedingRounds);
   const [isModalOpen, setIsModalOpen] = React.useState(false);
   const [isPhotosModalOpen, setIsPhotosModalOpen] = React.useState(false);
@@ -146,10 +151,16 @@ const FeedingRoundList: React.FC = () => {
       const result = await feedingRoundServices.getAll(10, lastDoc);
       
       // Update the query cache with the combined results
-      queryClient.setQueryData<PaginatedFeedingRounds>(['feedingRounds'], (oldData) => ({
-        rounds: [...(oldData?.rounds || []), ...result.rounds],
-        lastDoc: result.lastDoc
-      }));
+      queryClient.setQueryData<AllData>(['all-data'], (oldData) => {
+        if (!oldData) return oldData;
+        return {
+          ...oldData,
+          feedingRounds: {
+            rounds: [...(oldData.feedingRounds.rounds || []), ...result.rounds],
+            lastDoc: result.lastDoc
+          }
+        };
+      });
 
       if (result.lastDoc) {
         setLastDoc(result.lastDoc);
@@ -191,21 +202,22 @@ const FeedingRoundList: React.FC = () => {
       const updatedRounds = validFeedingRounds.map(round => 
         round.id === id ? { ...round, status } : round
       );
-      queryClient.setQueryData(['feedingRounds'], { rounds: updatedRounds, lastDoc });
+      queryClient.setQueryData<AllData>(['all-data'], (oldData) => ({
+        ...oldData!,
+        feedingRounds: { rounds: updatedRounds, lastDoc }
+      }));
 
       await feedingRoundServices.updateStatus(id, status);
       
       // Invalidate and refetch all relevant queries
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['feedingRounds'] }),
         queryClient.invalidateQueries({ queryKey: ['all-data'] }),
-        queryClient.refetchQueries({ queryKey: ['feedingRounds'] }),
         queryClient.refetchQueries({ queryKey: ['all-data'] })
       ]);
     } catch (error) {
       console.error('Error updating status:', error);
       // Revert optimistic update
-      queryClient.invalidateQueries({ queryKey: ['feedingRounds'] });
+      queryClient.invalidateQueries({ queryKey: ['all-data'] });
       alert('Failed to update status');
     } finally {
       setUpdatingStatus(null);
@@ -218,17 +230,16 @@ const FeedingRoundList: React.FC = () => {
       try {
         // Optimistic update
         const updatedRounds = validFeedingRounds.filter(round => round.id !== id);
-        queryClient.setQueryData(['feedingRounds'], { rounds: updatedRounds, lastDoc });
+        queryClient.setQueryData<AllData>(['all-data'], (oldData) => ({
+          ...oldData!,
+          feedingRounds: { rounds: updatedRounds, lastDoc }
+        }));
 
         await feedingRoundServices.delete(id);
         
         // Invalidate and refetch all relevant queries
         await Promise.all([
-          queryClient.invalidateQueries({ queryKey: ['feedingRounds'] }),
-          queryClient.invalidateQueries({ queryKey: ['treasury'] }),
           queryClient.invalidateQueries({ queryKey: ['all-data'] }),
-          queryClient.refetchQueries({ queryKey: ['feedingRounds'] }),
-          queryClient.refetchQueries({ queryKey: ['treasury'] }),
           queryClient.refetchQueries({ queryKey: ['all-data'] })
         ]);
 
@@ -237,7 +248,7 @@ const FeedingRoundList: React.FC = () => {
       } catch (error) {
         console.error('Error deleting feeding round:', error);
         // Revert optimistic update
-        queryClient.invalidateQueries({ queryKey: ['feedingRounds'] });
+        queryClient.invalidateQueries({ queryKey: ['all-data'] });
         alert('Failed to delete feeding round');
       } finally {
         setIsDeleting(null);

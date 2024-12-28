@@ -43,41 +43,61 @@ export function useAllData() {
     queryKey: ["all-data"],
     queryFn: async () => {
       console.log('useAllData: Starting data fetch...');
-      const [
-        donors,
-        beneficiaries,
-        donations,
-        payments,
-        feedingRoundsResult,
-        treasury,
-        transactions
-      ] = await Promise.all([
-        donorServices.getAll(),
-        beneficiaryServices.getAll(),
-        donationServices.getAll(),
-        paymentServices.getAll(),
-        feedingRoundServices.getAll(),
-        treasuryServices.getAll(),
-        transactionServices.getAll()
-      ]);
+      
+      try {
+        console.log('useAllData: Fetching feeding rounds...');
+        const feedingRoundsResult = await feedingRoundServices.getAll();
+        console.log('useAllData: Feeding rounds fetched:', {
+          roundCount: feedingRoundsResult.rounds.length,
+          sampleRound: feedingRoundsResult.rounds[0],
+          hasLastDoc: !!feedingRoundsResult.lastDoc
+        });
 
-      console.log('useAllData: Feeding rounds result:', feedingRoundsResult);
+        console.log('useAllData: Fetching other data...');
+        const [
+          donors,
+          beneficiaries,
+          donations,
+          payments,
+          treasury,
+          transactions
+        ] = await Promise.all([
+          donorServices.getAll(),
+          beneficiaryServices.getAll(),
+          donationServices.getAll(),
+          paymentServices.getAll(),
+          treasuryServices.getAll(),
+          transactionServices.getAll()
+        ]);
 
-      const result = {
-        donors,
-        beneficiaries,
-        donations,
-        payments,
-        feedingRounds: {
-          rounds: feedingRoundsResult.rounds || [],
-          lastDoc: feedingRoundsResult.lastDoc || null
-        },
-        treasury,
-        transactions
-      };
+        const result = {
+          donors,
+          beneficiaries,
+          donations,
+          payments,
+          feedingRounds: {
+            rounds: feedingRoundsResult.rounds || [],
+            lastDoc: feedingRoundsResult.lastDoc || null
+          },
+          treasury,
+          transactions
+        };
 
-      console.log('useAllData: Returning data:', result);
-      return result;
+        console.log('useAllData: All data fetched successfully:', {
+          donorCount: donors.length,
+          beneficiaryCount: beneficiaries.length,
+          donationCount: donations.length,
+          paymentCount: payments.length,
+          feedingRoundCount: result.feedingRounds.rounds.length,
+          treasuryCount: treasury.length,
+          transactionCount: transactions.transactions.length
+        });
+
+        return result;
+      } catch (error) {
+        console.error('useAllData: Error fetching data:', error);
+        throw error;
+      }
     }
   });
 }
