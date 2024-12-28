@@ -11,7 +11,7 @@ import { Timestamp } from 'firebase/firestore';
  */
 export interface Donor {
   /** Unique identifier for the donor */
-  id: number;
+  id: string;
   /** Full name of the donor */
   name: string;
   /** Contact information for the donor */
@@ -24,9 +24,9 @@ export interface Donor {
  */
 export interface Donation {
   /** Unique identifier for the donation */
-  id: number;
+  id: string;
   /** Reference to the donor who made the contribution */
-  donorId: number;
+  donorId: string;
   /** Amount of the donation */
   amount: number;
   /** Purpose or intended use of the donation */
@@ -34,7 +34,7 @@ export interface Donation {
   /** Date when the donation was made */
   date: string;
   /** Reference to the treasury category this donation belongs to */
-  categoryId: number;
+  categoryId: string;
 }
 
 /**
@@ -74,11 +74,17 @@ export interface FeedingRound {
  */
 export interface TreasuryCategory {
   /** Unique identifier for the category */
-  id: number;
+  id: string;
   /** Name of the treasury category */
   name: string;
   /** Current balance in this category */
   balance: number;
+  /** Description of the category's purpose */
+  description?: string;
+  /** Timestamp of when the record was created */
+  createdAt?: Timestamp;
+  /** Timestamp of when the record was last updated */
+  updatedAt?: Timestamp;
 }
 
 /**
@@ -164,6 +170,6 @@ export interface Transaction {
   date: string;
   reference: string;
   status: 'COMPLETED' | 'PENDING' | 'FAILED';
-  createdAt?: any;
-  updatedAt?: any;
+  createdAt?: Timestamp;
+  updatedAt?: Timestamp;
 }

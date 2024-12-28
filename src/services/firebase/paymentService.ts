@@ -17,16 +17,14 @@ import {
 import { db } from '../../config/firebase';
 import { COLLECTIONS } from './constants';
 import { transactionServices } from './transactionService';
+import { Payment, PaymentStatus } from '../../types';
 
 /**
  * @interface CreatePaymentData
  * @description Data required to create a new payment, excluding system-managed fields
- * @extends {Omit<Payment, 'id' | 'status' | 'createdAt' | 'updatedAt' | 'deletedAt' | 'deletedBy' | 'isDeleted'>}
+ * @extends {Omit<Payment, 'id' | 'status' | 'createdAt' | 'updatedAt'>}
  */
-interface CreatePaymentData extends Omit<Payment, 'id' | 'status' | 'createdAt' | 'updatedAt' | 'deletedAt' | 'deletedBy' | 'isDeleted'> {
-  /** Flag indicating if the payment is created from a pending request (affects treasury balance check) */
-  isFromPendingRequest?: boolean;
-}
+interface CreatePaymentData extends Omit<Payment, 'id' | 'status' | 'createdAt' | 'updatedAt'> {}
 
 /**
  * @namespace paymentServices
@@ -53,26 +51,25 @@ export const paymentServices = {
   },
 
   /**
-   * Creates a new payment and updates treasury balance if required
+   * Creates a new payment and updates treasury balance
    * @async
    * @param {CreatePaymentData} data - Data for the new payment
    * @returns {Promise<Payment | null>} Created payment object or null if creation fails
    * @throws {Error} If:
    *  - Amount is not positive
    *  - Treasury category doesn't exist
-   *  - Insufficient funds in category (for non-pending requests)
+   *  - Insufficient funds in category
    *  - Transaction fails
    * 
    * @description
    * This operation performs the following steps atomically:
    * 1. Validates the payment amount
    * 2. Verifies the treasury category exists
-   * 3. If not from pending request:
-   *    a. Checks sufficient funds in category
-   *    b. Updates treasury balance
-   * 4. Creates the payment record with COMPLETED status
+   * 3. Checks sufficient funds in category
+   * 4. Updates treasury balance
+   * 5. Creates the payment record with COMPLETED status
    */
-  create: async (data: any) => {
+  create: async (data: CreatePaymentData) => {
     try {
       const result = await runTransaction(db, async (transaction) => {
         // Create the payment
@@ -110,7 +107,7 @@ export const paymentServices = {
       await transactionServices.recordTransaction({
         type: 'DEBIT',
         amount: data.amount,
-        description: `Payment to ${data.beneficiaryName || 'Beneficiary'} - ${data.paymentType || 'One-time payment'}`,
+        description: `Payment to beneficiary ${data.beneficiaryId} - ${data.paymentType || 'One-time payment'}`,
         category: 'PAYMENT',
         reference: result.id
       });
@@ -127,6 +124,7 @@ export const paymentServices = {
    * @async
    * @param {string} id - Payment ID
    * @param {Partial<Payment>} data - Updated payment data
+   * @returns {Promise<Payment>} Updated payment object
    * @throws {Error} If:
    *  - Payment not found
    *  - New amount is not positive
@@ -179,7 +177,7 @@ export const paymentServices = {
           await transactionServices.recordTransaction({
             type: 'CREDIT',
             amount: currentPayment.amount,
-            description: `Reversed payment to ${currentPayment.beneficiaryName || 'Beneficiary'} - Update`,
+            description: `Reversed payment to beneficiary ${currentPayment.beneficiaryId} - Update`,
             category: 'PAYMENT_UPDATE',
             reference: id
           });
@@ -209,7 +207,7 @@ export const paymentServices = {
           await transactionServices.recordTransaction({
             type: 'DEBIT',
             amount: newAmount,
-            description: `Updated payment to ${data.beneficiaryName || currentPayment.beneficiaryName || 'Beneficiary'}`,
+            description: `Updated payment to beneficiary ${data.beneficiaryId || currentPayment.beneficiaryId}`,
             category: 'PAYMENT_UPDATE',
             reference: id
           });
@@ -222,7 +220,7 @@ export const paymentServices = {
         };
         transaction.update(paymentRef, updatedData);
 
-        return { id, ...currentPayment, ...updatedData };
+        return { ...currentPayment, ...updatedData };
       });
 
       return result;
@@ -290,7 +288,7 @@ export const paymentServices = {
         await transactionServices.recordTransaction({
           type: 'CREDIT',
           amount: paymentData.amount,
-          description: `Cancelled payment to ${paymentData.beneficiaryName || 'Beneficiary'}`,
+          description: `Cancelled payment to beneficiary ${paymentData.beneficiaryId}`,
           category: 'PAYMENT_CANCEL',
           reference: id
         });
@@ -302,28 +300,26 @@ export const paymentServices = {
   },
 
   /**
-   * Soft deletes a payment and refunds the amount to treasury if completed
+   * Updates the status of a payment and handles related treasury operations
    * @async
    * @param {string} id - Payment ID
-   * @param {string} userId - ID of user performing the deletion
+   * @param {PaymentStatus} newStatus - New status for the payment
    * @throws {Error} If:
    *  - Payment not found
-   *  - Payment already deleted
-   *  - Payment is cancelled
+   *  - Invalid status transition
    *  - Treasury category not found
    *  - Transaction fails
    * 
    * @description
    * This operation performs the following steps atomically:
    * 1. Retrieves and validates the payment
-   * 2. Verifies payment can be deleted
-   * 3. If payment was COMPLETED:
-   *    a. Refunds amount to treasury category
-   * 4. Soft deletes the payment with audit trail
+   * 2. Verifies valid status transition
+   * 3. Updates payment status
+   * 4. Handles treasury balance adjustments based on status change
    */
-  delete: async (id: string, userId: string) => {
+  updateStatus: async (id: string, newStatus: PaymentStatus) => {
     try {
-      await runTransaction(db, async (transaction) => {
+      const result = await runTransaction(db, async (transaction) => {
         const paymentRef = doc(db, COLLECTIONS.PAYMENTS, id);
         const paymentDoc = await transaction.get(paymentRef);
         
@@ -331,46 +327,79 @@ export const paymentServices = {
           throw new Error('Payment not found');
         }
 
-        const paymentData = paymentDoc.data() as Payment;
-        
-        // Validate payment can be deleted
-        if (paymentData.isDeleted) {
-          throw new Error('Payment already deleted');
-        }
-        
-        if (paymentData.status === 'CANCELLED') {
-          throw new Error('Cannot delete cancelled payments');
+        const payment = paymentDoc.data() as Payment;
+        const currentStatus = payment.status;
+
+        // Validate status transition
+        if (currentStatus === newStatus) {
+          return payment; // No change needed
         }
 
-        // If payment was deducted from treasury (COMPLETED status), refund it
-        if (paymentData.status === 'COMPLETED') {
-          const categoryRef = doc(db, COLLECTIONS.TREASURY, paymentData.categoryId);
-          const categoryDoc = await transaction.get(categoryRef);
-          
-          if (!categoryDoc.exists()) {
-            throw new Error('Treasury category not found');
+        if (currentStatus === 'CANCELLED') {
+          throw new Error('Cannot update a cancelled payment');
+        }
+
+        // Handle treasury balance adjustments
+        const categoryRef = doc(db, COLLECTIONS.TREASURY, payment.categoryId);
+        const categoryDoc = await transaction.get(categoryRef);
+        
+        if (!categoryDoc.exists()) {
+          throw new Error('Treasury category not found');
+        }
+
+        const currentBalance = categoryDoc.data().balance || 0;
+
+        // Handle different status transitions
+        if (currentStatus === 'PENDING' && newStatus === 'COMPLETED') {
+          // Check if there are sufficient funds
+          if (currentBalance < payment.amount) {
+            throw new Error('Insufficient funds in category');
           }
 
-          const currentBalance = categoryDoc.data().balance || 0;
-
-          // Refund amount to treasury
+          // Deduct from treasury
           transaction.update(categoryRef, {
-            balance: currentBalance + paymentData.amount,
+            balance: currentBalance - payment.amount,
             updatedAt: Timestamp.now()
+          });
+
+          // Record debit transaction
+          await transactionServices.recordTransaction({
+            type: 'DEBIT',
+            amount: payment.amount,
+            description: `Payment completed for beneficiary ${payment.beneficiaryId}`,
+            category: 'PAYMENT_STATUS',
+            reference: id
+          });
+        } else if (currentStatus === 'COMPLETED' && newStatus === 'CANCELLED') {
+          // Refund to treasury
+          transaction.update(categoryRef, {
+            balance: currentBalance + payment.amount,
+            updatedAt: Timestamp.now()
+          });
+
+          // Record credit transaction
+          await transactionServices.recordTransaction({
+            type: 'CREDIT',
+            amount: payment.amount,
+            description: `Payment cancelled for beneficiary ${payment.beneficiaryId}`,
+            category: 'PAYMENT_STATUS',
+            reference: id
           });
         }
 
-        // Soft delete the payment
-        transaction.update(paymentRef, {
-          isDeleted: true,
-          deletedAt: Timestamp.now(),
-          deletedBy: userId,
-          status: 'CANCELLED',
+        // Update payment status
+        const updatedData = {
+          status: newStatus,
           updatedAt: Timestamp.now()
-        });
+        };
+        transaction.update(paymentRef, updatedData);
+
+        return { ...payment, ...updatedData };
       });
+
+      return result;
     } catch (error) {
-      console.error('Error deleting payment:', error);
+      console.error('Error updating payment status:', error);
       throw error;
     }
   },
@@ -388,69 +417,6 @@ export const paymentServices = {
       }));
     } catch (error) {
       console.error('Error fetching beneficiary payments:', error);
-      throw error;
-    }
-  },
-
-  /**
-   * Updates the status of a payment and handles related treasury operations
-   * @async
-   * @param {string} id - Payment ID
-   * @param {PaymentStatus} status - New status to set
-   * @throws {Error} If:
-   *  - Payment not found
-   *  - Invalid status transition
-   *  - Treasury category not found
-   *  - Transaction fails
-   */
-  updateStatus: async (id: string, status: PaymentStatus) => {
-    try {
-      await runTransaction(db, async (transaction) => {
-        const paymentRef = doc(db, COLLECTIONS.PAYMENTS, id);
-        const paymentDoc = await transaction.get(paymentRef);
-        
-        if (!paymentDoc.exists()) {
-          throw new Error('Payment not found');
-        }
-
-        const paymentData = paymentDoc.data() as Payment;
-        
-        // Handle treasury balance adjustments based on status changes
-        if (status === 'CANCELLED' && paymentData.status !== 'CANCELLED') {
-          // Refund the amount to treasury
-          const categoryRef = doc(db, COLLECTIONS.TREASURY, paymentData.categoryId);
-          const categoryDoc = await transaction.get(categoryRef);
-          
-          if (!categoryDoc.exists()) {
-            throw new Error('Treasury category not found');
-          }
-
-          const currentBalance = categoryDoc.data().balance || 0;
-
-          // Update treasury balance
-          transaction.update(categoryRef, {
-            balance: currentBalance + paymentData.amount,
-            updatedAt: Timestamp.now()
-          });
-
-          // Record refund transaction
-          await transactionServices.recordTransaction({
-            type: 'CREDIT',
-            amount: paymentData.amount,
-            description: `Cancelled payment to ${paymentData.beneficiaryName || 'Beneficiary'}`,
-            category: 'PAYMENT_CANCEL',
-            reference: id
-          });
-        }
-
-        // Update payment status
-        transaction.update(paymentRef, {
-          status,
-          updatedAt: Timestamp.now()
-        });
-      });
-    } catch (error) {
-      console.error('Error updating payment status:', error);
       throw error;
     }
   }
