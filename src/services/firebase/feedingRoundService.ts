@@ -23,7 +23,7 @@ import { db } from '../../config/firebase';
 import { FeedingRound } from '../../types';
 import { COLLECTIONS } from './constants';
 import { format } from 'date-fns';
-import { transactionServices } from '../../services/transactionService';
+import { transactionServices } from './transactionService';
 
 const MAX_RETRY_ATTEMPTS = 3;
 const BATCH_SIZE = 10;
@@ -82,33 +82,90 @@ export const feedingRoundServices = {
     lastDoc: DocumentSnapshot | null;
   }> => {
     try {
+      console.log('FeedingRoundService: Starting getAll with params:', { 
+        pageSize, 
+        hasStartAfterDoc: !!startAfterDoc, 
+        status,
+        collectionPath: COLLECTIONS.FEEDING_ROUNDS 
+      });
+      
+      // Debug Firestore connection
+      console.log('FeedingRoundService: Checking Firestore connection...', db);
+      
+      const collectionRef = collection(db, COLLECTIONS.FEEDING_ROUNDS);
+      console.log('FeedingRoundService: Collection reference:', collectionRef);
+
       let q = query(
-        collection(db, COLLECTIONS.FEEDING_ROUNDS),
+        collectionRef,
         orderBy('createdAt', 'desc'),
         limit(pageSize)
       );
+      console.log('FeedingRoundService: Initial query created');
 
       if (status) {
         q = query(q, where('status', '==', status));
+        console.log('FeedingRoundService: Added status filter:', status);
       }
 
       if (startAfterDoc) {
         q = query(q, startAfter(startAfterDoc));
+        console.log('FeedingRoundService: Added pagination cursor');
       }
 
-      const querySnapshot = await retryOperation(async () => await getDocs(q));
+      console.log('FeedingRoundService: Executing query...');
+      const querySnapshot = await retryOperation(async () => {
+        console.log('FeedingRoundService: Attempting query execution...');
+        const snapshot = await getDocs(q);
+        console.log('FeedingRoundService: Query execution successful');
+        return snapshot;
+      });
       
-      const rounds = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as FeedingRound[];
+      console.log('FeedingRoundService: Query returned', querySnapshot.docs.length, 'documents');
+      console.log('FeedingRoundService: Documents:', querySnapshot.docs.map(doc => ({ id: doc.id, exists: doc.exists() })));
+      
+      const rounds = querySnapshot.docs.map(doc => {
+        const data = doc.data();
+        console.log('FeedingRoundService: Processing document:', { id: doc.id, data });
+        
+        return {
+          id: doc.id,
+          date: data.date || new Date().toISOString().split('T')[0],
+          status: data.status || 'PENDING',
+          allocatedAmount: data.allocatedAmount || 0,
+          categoryId: data.categoryId || '',
+          driveLink: data.driveLink || '',
+          description: data.description || '',
+          unitPrice: data.unitPrice || 0,
+          observations: data.observations || '',
+          specialCircumstances: data.specialCircumstances || '',
+          createdAt: data.createdAt || Timestamp.now(),
+          updatedAt: data.updatedAt || Timestamp.now(),
+          photos: data.photos || []
+        };
+      }) as FeedingRound[];
 
-      return {
+      console.log('FeedingRoundService: Processed rounds:', rounds.length);
+      console.log('FeedingRoundService: Sample round data:', rounds[0]);
+      
+      const result = {
         rounds,
         lastDoc: querySnapshot.docs[querySnapshot.docs.length - 1] || null
       };
+      
+      console.log('FeedingRoundService: Returning result:', {
+        roundCount: result.rounds.length,
+        hasLastDoc: !!result.lastDoc,
+        sampleIds: result.rounds.slice(0, 3).map(r => r.id)
+      });
+      
+      return result;
     } catch (error) {
-      console.error('Error fetching feeding rounds:', error);
+      console.error('FeedingRoundService: Error in getAll:', error);
+      console.error('FeedingRoundService: Error details:', {
+        name: error.name,
+        message: error.message,
+        stack: error.stack
+      });
       throw new Error(`Failed to fetch feeding rounds: ${error.message}`);
     }
   },

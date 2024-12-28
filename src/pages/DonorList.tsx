@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Users, Plus, Pencil, Trash2 } from 'lucide-react';
 import { DonorModal } from '../components/modals/DonorModal';
-import { donorServices } from '../services/firebase';
+import { donorServices } from '../services/firebase/donorService';
 import { useQueryClient } from '@tanstack/react-query';
 import { Donor } from '../types/donor';
 import { useFirebaseQuery } from '../hooks/useFirebaseQuery';

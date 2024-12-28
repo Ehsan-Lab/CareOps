@@ -71,18 +71,19 @@ export const paymentServices = {
    */
   create: async (data: CreatePaymentData) => {
     try {
-      const result = await runTransaction(db, async (transaction) => {
-        // Create the payment
-        const paymentRef = doc(collection(db, COLLECTIONS.PAYMENTS));
-        const paymentData = {
-          ...data,
-          status: 'COMPLETED',
-          createdAt: Timestamp.now(),
-          updatedAt: Timestamp.now()
-        };
-        transaction.set(paymentRef, paymentData);
+      console.log('Creating payment with data:', {
+        type: data.paymentType,
+        repetitions: data.totalRepetitions,
+        frequency: data.frequency
+      });
 
-        // Update treasury balance
+      if (data.paymentType === 'RECURRING' && (!data.totalRepetitions || !data.frequency)) {
+        throw new Error('Recurring payments require totalRepetitions and frequency');
+      }
+
+      // Create a single transaction for all payments
+      const result = await runTransaction(db, async (transaction) => {
+        // First, read the category document
         const categoryRef = doc(db, COLLECTIONS.TREASURY, data.categoryId);
         const categoryDoc = await transaction.get(categoryRef);
         
@@ -90,29 +91,100 @@ export const paymentServices = {
           throw new Error('Treasury category not found');
         }
 
+        // For recurring payments, validate total amount but don't deduct yet
+        const totalAmount = data.totalRepetitions ? data.amount * data.totalRepetitions : data.amount;
         const currentBalance = categoryDoc.data().balance || 0;
-        if (currentBalance < data.amount) {
+        
+        // Just validate the funds are available
+        if (currentBalance < totalAmount) {
           throw new Error('Insufficient funds in category');
         }
 
-        transaction.update(categoryRef, {
-          balance: currentBalance - data.amount,
-          updatedAt: Timestamp.now()
-        });
+        // After all reads, perform writes
+        const paymentRefs: { id: string; data: any }[] = [];
 
-        return { id: paymentRef.id, ...paymentData };
+        if (data.paymentType === 'RECURRING' && data.totalRepetitions && data.totalRepetitions > 1) {
+          console.log(`Creating ${data.totalRepetitions} recurring payments with frequency ${data.frequency}`);
+          
+          // Create multiple payments for recurring payments
+          for (let i = 0; i < data.totalRepetitions; i++) {
+            const paymentRef = doc(collection(db, COLLECTIONS.PAYMENTS));
+            const paymentDate = new Date(data.date);
+
+            // Calculate date based on frequency
+            switch (data.frequency) {
+              case 'weekly':
+                paymentDate.setDate(paymentDate.getDate() + (7 * i));
+                break;
+              case 'monthly':
+                paymentDate.setMonth(paymentDate.getMonth() + i);
+                break;
+              case 'quarterly':
+                paymentDate.setMonth(paymentDate.getMonth() + (3 * i));
+                break;
+              case 'yearly':
+                paymentDate.setFullYear(paymentDate.getFullYear() + i);
+                break;
+            }
+
+            const paymentData = {
+              ...data,
+              date: paymentDate.toISOString().split('T')[0],
+              status: 'PENDING' as const,
+              repetitionNumber: i + 1,
+              totalRepetitions: data.totalRepetitions,
+              description: `${data.description} (Payment ${i + 1}/${data.totalRepetitions})`,
+              createdAt: Timestamp.now(),
+              updatedAt: Timestamp.now()
+            };
+
+            console.log(`Creating payment ${i + 1}/${data.totalRepetitions}:`, {
+              date: paymentData.date,
+              amount: paymentData.amount,
+              description: paymentData.description
+            });
+
+            transaction.set(paymentRef, paymentData);
+            paymentRefs.push({ id: paymentRef.id, data: paymentData });
+          }
+
+          console.log(`Successfully created ${paymentRefs.length} recurring payments`);
+        } else {
+          console.log('Creating single payment');
+          // Create single payment for one-time payments
+          const paymentRef = doc(collection(db, COLLECTIONS.PAYMENTS));
+          const paymentData = {
+            ...data,
+            status: 'PENDING' as const,
+            createdAt: Timestamp.now(),
+            updatedAt: Timestamp.now()
+          };
+          
+          transaction.set(paymentRef, paymentData);
+          paymentRefs.push({ id: paymentRef.id, data: paymentData });
+        }
+
+        return paymentRefs;
       });
 
-      // Record the transaction
-      await transactionServices.recordTransaction({
-        type: 'DEBIT',
-        amount: data.amount,
-        description: `Payment to beneficiary ${data.beneficiaryId} - ${data.paymentType || 'One-time payment'}`,
-        category: 'PAYMENT',
-        reference: result.id
+      // Record transactions for each payment creation (not debiting treasury yet)
+      console.log(`Recording ${result.length} transaction records`);
+      await Promise.all(result.map(payment => 
+        transactionServices.recordTransaction({
+          type: 'STATUS_UPDATE',
+          amount: data.amount,
+          description: `Payment created for beneficiary ${data.beneficiaryId} - ${payment.data.description}`,
+          category: 'PAYMENT_CREATED',
+          reference: payment.id
+        })
+      ));
+
+      console.log('Payment creation completed:', {
+        paymentsCreated: result.length,
+        firstPaymentId: result[0]?.id
       });
 
-      return result;
+      return result.length === 1 ? result[0] : result;
     } catch (error) {
       console.error('Error creating payment:', error);
       throw error;
@@ -308,18 +380,13 @@ export const paymentServices = {
    *  - Payment not found
    *  - Invalid status transition
    *  - Treasury category not found
+   *  - Insufficient funds for completion
    *  - Transaction fails
-   * 
-   * @description
-   * This operation performs the following steps atomically:
-   * 1. Retrieves and validates the payment
-   * 2. Verifies valid status transition
-   * 3. Updates payment status
-   * 4. Handles treasury balance adjustments based on status change
    */
   updateStatus: async (id: string, newStatus: PaymentStatus) => {
     try {
       const result = await runTransaction(db, async (transaction) => {
+        // First, read all necessary documents
         const paymentRef = doc(db, COLLECTIONS.PAYMENTS, id);
         const paymentDoc = await transaction.get(paymentRef);
         
@@ -339,7 +406,7 @@ export const paymentServices = {
           throw new Error('Cannot update a cancelled payment');
         }
 
-        // Handle treasury balance adjustments
+        // Read treasury category
         const categoryRef = doc(db, COLLECTIONS.TREASURY, payment.categoryId);
         const categoryDoc = await transaction.get(categoryRef);
         
@@ -351,12 +418,12 @@ export const paymentServices = {
 
         // Handle different status transitions
         if (currentStatus === 'PENDING' && newStatus === 'COMPLETED') {
-          // Check if there are sufficient funds
+          // Check if there are sufficient funds before completing
           if (currentBalance < payment.amount) {
             throw new Error('Insufficient funds in category');
           }
 
-          // Deduct from treasury
+          // Deduct from treasury only when completing the payment
           transaction.update(categoryRef, {
             balance: currentBalance - payment.amount,
             updatedAt: Timestamp.now()
@@ -366,12 +433,12 @@ export const paymentServices = {
           await transactionServices.recordTransaction({
             type: 'DEBIT',
             amount: payment.amount,
-            description: `Payment completed for beneficiary ${payment.beneficiaryId}`,
-            category: 'PAYMENT_STATUS',
+            description: `Payment completed for beneficiary ${payment.beneficiaryId} - ${payment.description || payment.paymentType}`,
+            category: 'PAYMENT_COMPLETED',
             reference: id
           });
         } else if (currentStatus === 'COMPLETED' && newStatus === 'CANCELLED') {
-          // Refund to treasury
+          // Refund to treasury if cancelling a completed payment
           transaction.update(categoryRef, {
             balance: currentBalance + payment.amount,
             updatedAt: Timestamp.now()
@@ -381,8 +448,8 @@ export const paymentServices = {
           await transactionServices.recordTransaction({
             type: 'CREDIT',
             amount: payment.amount,
-            description: `Payment cancelled for beneficiary ${payment.beneficiaryId}`,
-            category: 'PAYMENT_STATUS',
+            description: `Payment cancelled for beneficiary ${payment.beneficiaryId} - ${payment.description || payment.paymentType}`,
+            category: 'PAYMENT_CANCELLED',
             reference: id
           });
         }

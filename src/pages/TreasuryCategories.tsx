@@ -3,7 +3,7 @@ import { Wallet, Plus, Pencil, Trash2 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useFirebaseQuery } from '../hooks/useFirebaseQuery';
 import { TreasuryCategoryModal } from '../components/modals/TreasuryCategoryModal';
-import { treasuryServices } from '../services/firebase';
+import { treasuryServices } from '../services/firebase/treasuryService';
 
 interface TreasuryCategory {
   id: string;

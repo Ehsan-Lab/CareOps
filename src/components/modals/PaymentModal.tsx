@@ -3,9 +3,9 @@ import { useForm } from 'react-hook-form';
 import { X, Calendar, DollarSign, FileText, Clock } from 'lucide-react';
 import { paymentServices } from '../../services/firebase/paymentService';
 import { useQueryClient } from '@tanstack/react-query';
-import { useStore } from '../../store';
-import { Payment, PaymentType } from '../../types';
+import { Payment } from '../../types';
 import { BeneficiaryCombobox } from '../BeneficiaryCombobox';
+import { useAllData } from '../../hooks/useFirebaseQuery';
 
 interface PaymentModalProps {
   isOpen: boolean;
@@ -19,34 +19,39 @@ interface PaymentFormData {
   amount: string;
   categoryId: string;
   date: string;
-  paymentType: PaymentType;
+  paymentType: 'ONE_TIME' | 'RECURRING';
   notes: string;
   frequency?: 'weekly' | 'monthly' | 'quarterly' | 'yearly';
+  repetitions?: string;
   description: string;
 }
 
 export function PaymentModal({ isOpen, onClose, payment, beneficiaryId }: PaymentModalProps) {
   const queryClient = useQueryClient();
-  const { treasuryCategories, beneficiaries, setPayments, payments } = useStore();
+  const { data, isLoading } = useAllData();
+  const treasuryCategories = data?.treasury || [];
+  const beneficiaries = data?.beneficiaries || [];
+
+  const defaultValues: PaymentFormData = payment ? {
+    beneficiaryId: payment.beneficiaryId,
+    amount: String(payment.amount),
+    categoryId: payment.categoryId,
+    date: payment.date,
+    paymentType: payment.paymentType === 'SEASONAL' ? 'ONE_TIME' : payment.paymentType as 'ONE_TIME' | 'RECURRING',
+    notes: payment.notes || '',
+    description: payment.notes || ''
+  } : {
+    beneficiaryId: beneficiaryId || '',
+    amount: '',
+    categoryId: '',
+    date: new Date().toISOString().split('T')[0],
+    paymentType: 'ONE_TIME',
+    notes: '',
+    description: ''
+  };
 
   const { register, handleSubmit, watch, setValue, reset, formState: { errors } } = useForm<PaymentFormData>({
-    defaultValues: payment ? {
-      beneficiaryId: payment.beneficiaryId,
-      amount: String(payment.amount),
-      categoryId: payment.categoryId,
-      date: payment.date,
-      paymentType: payment.paymentType,
-      notes: payment.notes || '',
-      description: payment.notes || ''
-    } : {
-      beneficiaryId: beneficiaryId || '',
-      amount: '',
-      categoryId: '',
-      date: new Date().toISOString().split('T')[0],
-      paymentType: 'ONE_TIME',
-      notes: '',
-      description: ''
-    }
+    defaultValues
   });
 
   React.useEffect(() => {
@@ -56,7 +61,7 @@ export function PaymentModal({ isOpen, onClose, payment, beneficiaryId }: Paymen
         amount: String(payment.amount),
         categoryId: payment.categoryId,
         date: payment.date,
-        paymentType: payment.paymentType,
+        paymentType: payment.paymentType === 'SEASONAL' ? 'ONE_TIME' : payment.paymentType as 'ONE_TIME' | 'RECURRING',
         notes: payment.notes || '',
         description: payment.notes || ''
       });
@@ -77,36 +82,82 @@ export function PaymentModal({ isOpen, onClose, payment, beneficiaryId }: Paymen
   const activeBeneficiaries = beneficiaries.filter(b => b.status === 'ACTIVE');
   const availableCategories = treasuryCategories.filter(c => c.balance > 0);
 
-  const onSubmit = async (data: PaymentFormData) => {
+  const onSubmit = async (formData: PaymentFormData) => {
     try {
-      if (!data.beneficiaryId && !beneficiaryId) {
+      if (!formData.beneficiaryId && !beneficiaryId) {
         alert('Please select a beneficiary');
         return;
       }
 
-      const paymentData = {
-        ...data,
-        amount: parseFloat(data.amount),
-        beneficiaryId: beneficiaryId || data.beneficiaryId,
-        categoryId: data.categoryId,
-        representativeId: 'SYSTEM'
+      const amount = parseFloat(formData.amount);
+      if (isNaN(amount) || amount <= 0) {
+        alert('Please enter a valid amount greater than 0');
+        return;
+      }
+
+      // For recurring payments, validate frequency and repetitions
+      if (formData.paymentType === 'RECURRING') {
+        if (!formData.frequency) {
+          alert('Please select a frequency for recurring payments');
+          return;
+        }
+        if (!formData.repetitions || parseInt(formData.repetitions) < 1) {
+          alert('Please enter a valid number of repetitions');
+          return;
+        }
+      }
+
+      // Calculate total amount for recurring payments
+      const repetitions = formData.paymentType === 'RECURRING' ? parseInt(formData.repetitions || '1') : 1;
+      const totalAmount = amount * repetitions;
+
+      // Validate if category has sufficient balance
+      const selectedCategory = treasuryCategories.find(c => c.id === formData.categoryId);
+      if (!selectedCategory) {
+        alert('Selected category not found');
+        return;
+      }
+      if (selectedCategory.balance < totalAmount) {
+        alert(`Insufficient funds in category. Required: $${totalAmount.toFixed(2)}, Available: $${selectedCategory.balance.toFixed(2)}`);
+        return;
+      }
+
+      const basePaymentData = {
+        amount: amount,
+        beneficiaryId: beneficiaryId || formData.beneficiaryId,
+        categoryId: formData.categoryId,
+        treasuryId: formData.categoryId,
+        representativeId: 'SYSTEM',
+        status: 'PENDING' as const,
+        description: formData.description,
+        notes: formData.notes,
+        paymentType: formData.paymentType
       };
 
       if (payment?.id) {
-        const updatedPayment = await paymentServices.update(payment.id.toString(), paymentData) as Payment;
-        setPayments(
-          payments.map(p => 
-            p.id === payment.id ? { ...p, ...updatedPayment } : p
-          )
-        );
+        await paymentServices.update(payment.id.toString(), basePaymentData);
       } else {
-        const newPayment = await paymentServices.create(paymentData) as Payment;
-        if (newPayment) {
-          setPayments([...payments, newPayment]);
+        if (formData.paymentType === 'RECURRING') {
+          // Create multiple pending payments
+          const paymentData: Omit<Payment, 'id' | 'createdAt' | 'updatedAt'> = {
+            ...basePaymentData,
+            date: formData.date,
+            frequency: formData.frequency,
+            totalRepetitions: repetitions,
+            description: formData.description
+          };
+          await paymentServices.create(paymentData);
+        } else {
+          // Create single one-time payment
+          const paymentData: Omit<Payment, 'id' | 'createdAt' | 'updatedAt'> = {
+            ...basePaymentData,
+            date: formData.date
+          };
+          await paymentServices.create(paymentData);
         }
       }
       
-      queryClient.invalidateQueries({ queryKey: ['all-data'] });
+      await queryClient.invalidateQueries({ queryKey: ['all-data'] });
       reset();
       onClose();
     } catch (error) {
@@ -127,7 +178,11 @@ export function PaymentModal({ isOpen, onClose, payment, beneficiaryId }: Paymen
             <h3 className="text-lg font-medium text-gray-900">
               {payment ? 'Edit Payment' : 'New Payment'}
             </h3>
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-500">
+            <button 
+              onClick={onClose} 
+              className="text-gray-400 hover:text-gray-500"
+              title="Close modal"
+            >
               <X className="h-5 w-5" />
             </button>
           </div>
@@ -143,6 +198,7 @@ export function PaymentModal({ isOpen, onClose, payment, beneficiaryId }: Paymen
                   value={watch('beneficiaryId')}
                   onChange={(value) => setValue('beneficiaryId', value)}
                   error={errors.beneficiaryId?.message}
+                  disabled={isLoading}
                 />
               </div>
             )}
@@ -163,6 +219,7 @@ export function PaymentModal({ isOpen, onClose, payment, beneficiaryId }: Paymen
                     min: { value: 0.01, message: 'Amount must be greater than 0' }
                   })}
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  disabled={isLoading}
                 />
                 {errors.amount && (
                   <p className="mt-1 text-sm text-red-600">{errors.amount.message}</p>
@@ -180,6 +237,7 @@ export function PaymentModal({ isOpen, onClose, payment, beneficiaryId }: Paymen
                   type="date"
                   {...register('date', { required: 'Date is required' })}
                   className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                  disabled={isLoading}
                 />
                 {errors.date && (
                   <p className="mt-1 text-sm text-red-600">{errors.date.message}</p>
@@ -192,6 +250,7 @@ export function PaymentModal({ isOpen, onClose, payment, beneficiaryId }: Paymen
               <select
                 {...register('categoryId', { required: 'Category is required' })}
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                disabled={isLoading}
               >
                 <option value="">Select a category</option>
                 {availableCategories.map((category) => (
@@ -215,28 +274,66 @@ export function PaymentModal({ isOpen, onClose, payment, beneficiaryId }: Paymen
               <select
                 {...register('paymentType')}
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                disabled={isLoading}
               >
                 <option value="ONE_TIME">One Time</option>
                 <option value="RECURRING">Recurring</option>
-                <option value="SEASONAL">Seasonal</option>
               </select>
             </div>
 
-            {paymentType !== 'ONE_TIME' && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700">
-                  Frequency
-                </label>
-                <select
-                  {...register('frequency')}
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                >
-                  <option value="weekly">Weekly</option>
-                  <option value="monthly">Monthly</option>
-                  <option value="quarterly">Quarterly</option>
-                  <option value="yearly">Yearly</option>
-                </select>
-              </div>
+            {paymentType === 'RECURRING' && (
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Frequency
+                  </label>
+                  <select
+                    {...register('frequency', {
+                      required: {
+                        value: paymentType === 'RECURRING',
+                        message: 'Frequency is required for recurring payments'
+                      }
+                    })}
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    disabled={isLoading}
+                  >
+                    <option value="">Select frequency</option>
+                    <option value="weekly">Weekly</option>
+                    <option value="monthly">Monthly</option>
+                    <option value="quarterly">Quarterly</option>
+                    <option value="yearly">Yearly</option>
+                  </select>
+                  {errors.frequency && (
+                    <p className="mt-1 text-sm text-red-600">{errors.frequency.message || 'Frequency is required'}</p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Number of Repetitions
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    {...register('repetitions', {
+                      required: {
+                        value: paymentType === 'RECURRING',
+                        message: 'Number of repetitions is required for recurring payments'
+                      },
+                      min: { 
+                        value: 1, 
+                        message: 'Must be at least 1 repetition' 
+                      }
+                    })}
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
+                    disabled={isLoading}
+                    placeholder="Enter number of repetitions"
+                  />
+                  {errors.repetitions && (
+                    <p className="mt-1 text-sm text-red-600">{errors.repetitions.message || 'Number of repetitions is required'}</p>
+                  )}
+                </div>
+              </>
             )}
 
             <div>
@@ -248,33 +345,33 @@ export function PaymentModal({ isOpen, onClose, payment, beneficiaryId }: Paymen
               </label>
               <textarea
                 {...register('description', {
-                  maxLength: { value: 500, message: 'Description cannot exceed 500 characters' }
+                  required: 'Description is required',
+                  minLength: { value: 3, message: 'Description must be at least 3 characters' }
                 })}
-                rows={3}
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
-                placeholder="Add any relevant details, conditions, or special circumstances..."
+                rows={3}
+                disabled={isLoading}
               />
               {errors.description && (
                 <p className="mt-1 text-sm text-red-600">{errors.description.message}</p>
               )}
-              <p className="mt-1 text-xs text-gray-500">
-                {watch('description')?.length || 0}/500 characters
-              </p>
             </div>
 
-            <div className="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse">
-              <button
-                type="submit"
-                className="inline-flex w-full justify-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 text-base font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 sm:ml-3 sm:w-auto sm:text-sm"
-              >
-                {payment ? 'Update' : 'Create'} Payment
-              </button>
+            <div className="flex justify-end gap-2">
               <button
                 type="button"
                 onClick={onClose}
-                className="mt-3 inline-flex w-full justify-center rounded-md border border-gray-300 bg-white px-4 py-2 text-base font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 sm:mt-0 sm:w-auto sm:text-sm"
+                className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                disabled={isLoading}
               >
                 Cancel
+              </button>
+              <button
+                type="submit"
+                className="rounded-md bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-700"
+                disabled={isLoading}
+              >
+                {isLoading ? 'Loading...' : payment ? 'Update Payment' : 'Add Payment'}
               </button>
             </div>
           </form>

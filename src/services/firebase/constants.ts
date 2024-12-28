@@ -15,7 +15,7 @@ export const COLLECTIONS = {
   /** Collection for storing donation records */
   DONATIONS: 'donations',
   /** Collection for storing feeding round events */
-  FEEDING_ROUNDS: 'feeding-rounds',
+  FEEDING_ROUNDS: 'feedingRounds',
   /** Collection for storing treasury categories and balances */
   TREASURY: 'treasury',
   /** Collection for storing beneficiary information */

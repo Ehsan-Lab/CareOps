@@ -4,6 +4,14 @@ properly comment your algorithm and write cleancode
 think deeply when debugging before action
 when you debug and find you see that you need a tool to fix the issue, start implementing it and save it in tools folder and use virtual environment to use it.
 
+# React Hook Migration Guidelines
+1. Deprecated Hook Migration:
+   - Replace useFirebaseQuery with useAllData for better data management
+   - Update component destructuring to match useAllData return type
+   - Ensure proper typing of data fields
+   - Handle null/undefined cases with default values
+   - Update query invalidation to use 'all-data' query key
+
 # Performance Optimization Guidelines
 1. Data Fetching:
    - Implement granular queries instead of fetching all data at once

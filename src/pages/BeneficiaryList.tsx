@@ -3,7 +3,7 @@ import { Users, Plus, Pencil, Ban } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useFirebaseQuery } from '../hooks/useFirebaseQuery';
 import { BeneficiaryModal } from '../components/modals/BeneficiaryModal';
-import { beneficiaryServices } from '../services/firebase';
+import { beneficiaryServices } from '../services/firebase/beneficiaryService';
 import { Beneficiary } from '../types';
 
 const BeneficiaryList: React.FC = () => {

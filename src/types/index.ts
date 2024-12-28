@@ -66,6 +66,8 @@ export interface FeedingRound {
   createdAt?: Timestamp;
   /** Timestamp of when the record was last updated */
   updatedAt?: Timestamp;
+  /** Array of photo URLs associated with this feeding round */
+  photos?: string[];
 }
 
 /**
@@ -159,6 +161,14 @@ export interface Payment {
   createdAt?: Timestamp;
   /** Timestamp of when the record was last updated */
   updatedAt?: Timestamp;
+  /** Frequency for recurring payments */
+  frequency?: 'weekly' | 'monthly' | 'quarterly' | 'yearly';
+  /** Current repetition number for recurring payments */
+  repetitionNumber?: number;
+  /** Total number of repetitions for recurring payments */
+  totalRepetitions?: number;
+  /** Description of the payment */
+  description?: string;
 }
 
 export interface Transaction {
