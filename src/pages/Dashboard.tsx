@@ -12,8 +12,8 @@ import {
 } from 'recharts';
 import { format, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
 import { useAllData } from '../hooks/useFirebaseQuery';
-import { FeedingRound, Transaction, TreasuryCategory } from '../types';
-import { DocumentSnapshot, QueryDocumentSnapshot, DocumentData, Timestamp } from 'firebase/firestore';
+import { FeedingRound } from '../types';
+import { DocumentSnapshot, QueryDocumentSnapshot, DocumentData } from 'firebase/firestore';
 import { logger } from '../utils/logger';
 
 // Chart colors
@@ -45,7 +45,6 @@ interface Donation {
   status: string;
   description: string;
   categoryId?: string;
-  createdAt?: Timestamp;
 }
 
 interface Beneficiary {
@@ -57,9 +56,14 @@ interface Beneficiary {
   address: string;
 }
 
-interface TransactionData {
-  transactions: Transaction[];
-  lastDoc: DocumentSnapshot | null;
+interface Payment {
+  id: string;
+  amount: number;
+  date: string;
+  status: 'PENDING' | 'COMPLETED' | 'CANCELLED';
+  beneficiaryId: string;
+  categoryId: string;
+  description?: string;
 }
 
 interface DashboardData {
@@ -67,8 +71,7 @@ interface DashboardData {
   donations: Donation[] | PaginatedDonations;
   feedingRounds: PaginatedFeedingRounds;
   beneficiaries: Beneficiary[];
-  transactions: TransactionData;
-  treasury: TreasuryCategory[];
+  payments: Payment[];
 }
 
 // Type guard for Donation
@@ -99,38 +102,27 @@ const Dashboard: React.FC = () => {
     donations = [] as Donation[],
     feedingRounds = { rounds: [], lastDoc: null } as PaginatedFeedingRounds,
     beneficiaries = [] as Beneficiary[],
-    transactions = { transactions: [], lastDoc: null } as TransactionData,
-    treasury = [] as TreasuryCategory[]
+    payments = [] as Payment[]
   } = (data || {}) as DashboardData;
 
   const validDonations = useMemo(() => {
-    const donationArray = Array.isArray(donations) ? donations : [];
+    // Handle both array and paginated structure
+    const donationArray = Array.isArray(donations) 
+      ? donations 
+      : (donations as PaginatedDonations)?.donations || [];
+
     return donationArray.filter((d: Donation) => {
-      if (!d.createdAt) {
-        logger.warn('Invalid date in donation', { donationId: d.id }, 'Dashboard');
+      if (!d || !d.amount || !d.date) {
+        logger.warn('Invalid donation data', { donation: d }, 'Dashboard');
         return false;
       }
       return true;
     });
   }, [donations]);
 
-  const validTransactions = useMemo(() => {
-    if (!transactions?.transactions || !Array.isArray(transactions.transactions)) {
-      logger.warn('Invalid transactions data', { transactions }, 'Dashboard');
-      return [];
-    }
-    return transactions.transactions.filter((t: Transaction) => {
-      if (!t.createdAt) {
-        logger.warn('Invalid date in transaction', { transactionId: t.id }, 'Dashboard');
-        return false;
-      }
-      return true;
-    });
-  }, [transactions]);
-
   // Calculate statistics and prepare chart data
   const stats = useMemo(() => {
-    if (!donors || !donations || !feedingRounds?.rounds || !beneficiaries || !transactions?.transactions) {
+    if (!donors || !validDonations || !feedingRounds?.rounds || !beneficiaries) {
       return null;
     }
 
@@ -139,17 +131,14 @@ const Dashboard: React.FC = () => {
     const monthEnd = endOfMonth(now);
 
     // Active donors this month
-    const donationArray = Array.isArray(donations) ? donations : [];
-    const validDonations = donationArray.filter(isDonation);
-    const validTransactions = transactions.transactions;
-    
     const activeDonorsThisMonth = new Set(
       validDonations
         .filter((d: Donation) => {
           try {
-            return isWithinInterval(new Date(d.date), { start: monthStart, end: monthEnd });
-          } catch {
-            console.warn('Invalid date in donation:', d);
+            const donationDate = new Date(d.date);
+            return isWithinInterval(donationDate, { start: monthStart, end: monthEnd });
+          } catch (error) {
+            logger.warn('Invalid date in donation', { donation: d, error }, 'Dashboard');
             return false;
           }
         })
@@ -160,33 +149,38 @@ const Dashboard: React.FC = () => {
     const donationsThisMonth = validDonations
       .filter((d: Donation) => {
         try {
-          return isWithinInterval(new Date(d.date), { start: monthStart, end: monthEnd });
-        } catch {
-          console.warn('Invalid date in donation:', d);
+          const donationDate = new Date(d.date);
+          return isWithinInterval(donationDate, { start: monthStart, end: monthEnd });
+        } catch (error) {
+          logger.warn('Invalid date in donation', { donation: d, error }, 'Dashboard');
           return false;
         }
       })
-      .reduce((sum: number, d: Donation) => sum + d.amount, 0);
+      .reduce((sum: number, d: Donation) => sum + (d.amount || 0), 0);
 
+    // Total donations all time
+    const totalDonations = validDonations
+      .reduce((sum: number, d: Donation) => sum + (d.amount || 0), 0);
+
+    // Calculate expenses from payments instead of transactions
+    const validPayments = payments.filter((p: Payment) => p.status === 'COMPLETED');
+    
     // Total expenses this month
-    const expensesThisMonth = validTransactions
-      .filter((t: Transaction) => {
+    const expensesThisMonth = validPayments
+      .filter((p: Payment) => {
         try {
-          const transactionDate = t.createdAt?.toDate();
-          return transactionDate && 
-            isWithinInterval(transactionDate, { start: monthStart, end: monthEnd }) && 
-            t.type === 'DEBIT';
-        } catch {
-          console.warn('Invalid date in transaction:', t);
+          const paymentDate = new Date(p.date);
+          return isWithinInterval(paymentDate, { start: monthStart, end: monthEnd });
+        } catch (error) {
+          logger.warn('Invalid date in payment', { payment: p, error }, 'Dashboard');
           return false;
         }
       })
-      .reduce((sum: number, t: Transaction) => sum + t.amount, 0);
+      .reduce((sum: number, p: Payment) => sum + (p.amount || 0), 0);
 
     // Total expenses all time
-    const totalExpenses = validTransactions
-      .filter((t: Transaction) => t.type === 'DEBIT')
-      .reduce((sum: number, t: Transaction) => sum + t.amount, 0);
+    const totalExpenses = validPayments
+      .reduce((sum: number, p: Payment) => sum + (p.amount || 0), 0);
 
     // Active beneficiaries
     const validBeneficiaries = beneficiaries.filter(isBeneficiary);
@@ -212,22 +206,22 @@ const Dashboard: React.FC = () => {
       activeDonorsThisMonth,
       totalBeneficiaries: beneficiaries.length,
       activeBeneficiaries,
-      totalDonations: validDonations.reduce((sum: number, d: Donation) => sum + d.amount, 0),
+      totalDonations,
       donationsThisMonth,
       totalExpenses,
       expensesThisMonth,
       completedFeedingRounds,
       upcomingFeedingRounds
     };
-  }, [donors, donations, feedingRounds?.rounds, beneficiaries, transactions?.transactions]);
+  }, [donors, validDonations, feedingRounds?.rounds, beneficiaries, payments]);
 
   // Prepare monthly donations chart data
   const monthlyDonationsData = useMemo(() => {
-    if (!donations || !transactions?.transactions) return [];
+    if (!donations || !payments) return [];
 
     const donationArray = Array.isArray(donations) ? donations : [];
     const validDonations = donationArray.filter(isDonation);
-    const validTransactions = transactions.transactions;
+    const validPayments = payments.filter((p: Payment) => p.status === 'COMPLETED');
     
     const last6Months = Array.from({ length: 6 }, (_, i) => {
       const date = new Date();
@@ -245,27 +239,25 @@ const Dashboard: React.FC = () => {
         .filter((d: Donation) => {
           try {
             return isWithinInterval(new Date(d.date), { start, end });
-          } catch {
-            console.warn('Invalid date in donation:', d);
+          } catch (error) {
+            logger.warn('Invalid date in donation', { donation: d, error }, 'Dashboard');
             return false;
           }
         })
-        .reduce((sum: number, d: Donation) => sum + d.amount, 0);
+        .reduce((sum: number, d: Donation) => sum + (d.amount || 0), 0);
 
-      // Calculate total expenses for this month
-      const monthlyExpenses = validTransactions
-        .filter((t: Transaction) => {
+      // Calculate total expenses for this month from payments
+      const monthlyExpenses = validPayments
+        .filter((p) => {
           try {
-            const transactionDate = t.createdAt?.toDate();
-            return transactionDate && 
-              isWithinInterval(transactionDate, { start, end }) && 
-              t.type === 'DEBIT';
-          } catch {
-            console.warn('Invalid date in transaction:', t);
+            const paymentDate = new Date(p.date);
+            return isWithinInterval(paymentDate, { start, end });
+          } catch (error) {
+            logger.warn('Invalid date in payment', { payment: p, error }, 'Dashboard');
             return false;
           }
         })
-        .reduce((sum: number, t: Transaction) => sum + t.amount, 0);
+        .reduce((sum: number, p) => sum + (p.amount || 0), 0);
 
       return {
         month,
@@ -274,7 +266,7 @@ const Dashboard: React.FC = () => {
         balance: monthlyDonations - monthlyExpenses
       };
     });
-  }, [donations, transactions?.transactions]);
+  }, [donations, data?.payments]);
 
   // Prepare beneficiary categories chart data
   const beneficiaryCategories = useMemo(() => {
