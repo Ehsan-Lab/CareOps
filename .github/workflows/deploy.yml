@@ -12,39 +12,116 @@ on:
 
 jobs:
   build-and-deploy:
+    name: 🎉 Build & Deploy
     # Only run deployment if push to main or if PR is merged to main
     if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.merged == true)
     runs-on: ubuntu-latest
+    environment: production
+
+    env:
+      VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+      VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
+      VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+      VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
+      VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+      VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
     
     steps:
-      - name: Checkout repository
+      - name: 🚚 Get latest code
         uses: actions/checkout@v3
 
-      - name: Setup Node.js
+      - name: ⚙️ Setup Node.js
         uses: actions/setup-node@v3
         with:
           node-version: '18'
           cache: 'npm'
 
-      - name: Install dependencies
-        run: npm ci
+      # Verify all required secrets are set
+      - name: 🔍 Verify deployment secrets
+        run: |
+          # Check FTP credentials
+          if [ -z "${{ secrets.FTP_SERVER }}" ]; then
+            echo "::error::FTP_SERVER secret is not set"
+            exit 1
+          fi
+          if [ -z "${{ secrets.FTP_USERNAME }}" ]; then
+            echo "::error::FTP_USERNAME secret is not set"
+            exit 1
+          fi
+          if [ -z "${{ secrets.FTP_PASSWORD }}" ]; then
+            echo "::error::FTP_PASSWORD secret is not set"
+            exit 1
+          fi
+          
+          # Check Firebase configuration
+          FIREBASE_VARS=(
+            "VITE_FIREBASE_API_KEY"
+            "VITE_FIREBASE_AUTH_DOMAIN"
+            "VITE_FIREBASE_PROJECT_ID"
+            "VITE_FIREBASE_STORAGE_BUCKET"
+            "VITE_FIREBASE_MESSAGING_SENDER_ID"
+            "VITE_FIREBASE_APP_ID"
+          )
+          
+          for var in "${FIREBASE_VARS[@]}"; do
+            if [ -z "${!var}" ]; then
+              echo "::error::$var is not set"
+              exit 1
+            fi
+          done
+          
+          echo "✅ All required secrets are properly configured"
 
-      - name: Build project
-        run: npm run build -- --mode production
-        env:
-          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
-          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
-          VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
-          VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
-          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
-          VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
+      # Cache dependencies
+      - name: 📦 Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.npm
+          key: npm-${{ hashFiles('package-lock.json') }}
+          restore-keys: npm-
 
-      - name: 📂 Sync files
+      - name: 📦 Install dependencies
+        run: |
+          echo "Installing dependencies..."
+          npm ci
+          echo "✅ Dependencies installed successfully"
+
+      - name: 🏗️ Build project
+        id: build
+        run: |
+          echo "Building project..."
+          npm run build -- --mode production
+          
+          if [ ! -d "dist" ]; then
+            echo "::error::Build failed - dist directory not created"
+            exit 1
+          fi
+          
+          echo "✅ Build completed successfully"
+          echo "📊 Build size: $(du -sh dist | cut -f1)"
+
+      - name: 📂 Deploy to Hostinger
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:
-          server: ${{ secrets.FTP_SERVER }} 
+          server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./dist/
           server-dir: /public_html/
-          dangerous-clean-slate: true # Removes all files in the remote directory before uploading 
+          dangerous-clean-slate: true # Removes all files in the remote directory before uploading
+          timeout: 60000 # Increase timeout for large deployments
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/node_modules/**
+            README.md
+            
+      - name: ✅ Deployment Status
+        if: always()
+        run: |
+          if [ "${{ job.status }}" = "success" ]; then
+            echo "✅ Deployment completed successfully!"
+          else
+            echo "❌ Deployment failed"
+            exit 1
+          fi 
