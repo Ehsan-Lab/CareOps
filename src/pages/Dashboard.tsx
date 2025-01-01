@@ -12,8 +12,8 @@ import {
 } from 'recharts';
 import { format, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
 import { useAllData } from '../hooks/useFirebaseQuery';
-import { FeedingRound } from '../types';
-import { DocumentSnapshot } from 'firebase/firestore';
+import { FeedingRound, Transaction, TreasuryCategory } from '../types';
+import { DocumentSnapshot, QueryDocumentSnapshot, DocumentData, Timestamp } from 'firebase/firestore';
 import { logger } from '../utils/logger';
 
 // Chart colors
@@ -22,6 +22,11 @@ const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042'];
 interface PaginatedFeedingRounds {
   rounds: FeedingRound[];
   lastDoc: DocumentSnapshot | null;
+}
+
+interface PaginatedDonations {
+  donations: Donation[];
+  lastDoc: QueryDocumentSnapshot<DocumentData, DocumentData>;
 }
 
 interface Donor {
@@ -39,6 +44,8 @@ interface Donation {
   donorId: string;
   status: string;
   description: string;
+  categoryId?: string;
+  createdAt?: Timestamp;
 }
 
 interface Beneficiary {
@@ -48,6 +55,20 @@ interface Beneficiary {
   supportType: string;
   phone: string;
   address: string;
+}
+
+interface TransactionData {
+  transactions: Transaction[];
+  lastDoc: DocumentSnapshot | null;
+}
+
+interface DashboardData {
+  donors: Donor[];
+  donations: Donation[] | PaginatedDonations;
+  feedingRounds: PaginatedFeedingRounds;
+  beneficiaries: Beneficiary[];
+  transactions: TransactionData;
+  treasury: TreasuryCategory[];
 }
 
 // Type guard for Donation
@@ -71,43 +92,45 @@ const isFeedingRound = (fr: unknown): fr is FeedingRound => {
     ['PENDING', 'IN_PROGRESS', 'COMPLETED'].includes((fr as FeedingRound).status);
 };
 
-/**
- * @component
- * @description Main dashboard component showing key metrics and visualizations
- */
 const Dashboard: React.FC = () => {
-  // Fetch data using our custom Firebase hook
   const { data, isLoading, error } = useAllData();
   const {
     donors = [] as Donor[],
     donations = [] as Donation[],
     feedingRounds = { rounds: [], lastDoc: null } as PaginatedFeedingRounds,
-    beneficiaries = [] as Beneficiary[]
-  } = data || {};
+    beneficiaries = [] as Beneficiary[],
+    transactions = { transactions: [], lastDoc: null } as TransactionData,
+    treasury = [] as TreasuryCategory[]
+  } = (data || {}) as DashboardData;
 
   const validDonations = useMemo(() => {
-    return donations?.filter(d => {
+    const donationArray = Array.isArray(donations) ? donations : [];
+    return donationArray.filter((d: Donation) => {
       if (!d.createdAt) {
         logger.warn('Invalid date in donation', { donationId: d.id }, 'Dashboard');
         return false;
       }
       return true;
-    }) || [];
+    });
   }, [donations]);
 
   const validTransactions = useMemo(() => {
-    return transactions?.filter(t => {
+    if (!transactions?.transactions || !Array.isArray(transactions.transactions)) {
+      logger.warn('Invalid transactions data', { transactions }, 'Dashboard');
+      return [];
+    }
+    return transactions.transactions.filter((t: Transaction) => {
       if (!t.createdAt) {
         logger.warn('Invalid date in transaction', { transactionId: t.id }, 'Dashboard');
         return false;
       }
       return true;
-    }) || [];
+    });
   }, [transactions]);
 
   // Calculate statistics and prepare chart data
   const stats = useMemo(() => {
-    if (!donors || !donations || !feedingRounds?.rounds || !beneficiaries || !data?.transactions) {
+    if (!donors || !donations || !feedingRounds?.rounds || !beneficiaries || !transactions?.transactions) {
       return null;
     }
 
@@ -116,12 +139,13 @@ const Dashboard: React.FC = () => {
     const monthEnd = endOfMonth(now);
 
     // Active donors this month
-    const validDonations = donations.filter(isDonation);
-    const validTransactions = data.transactions.transactions || [];
+    const donationArray = Array.isArray(donations) ? donations : [];
+    const validDonations = donationArray.filter(isDonation);
+    const validTransactions = transactions.transactions;
     
     const activeDonorsThisMonth = new Set(
       validDonations
-        .filter(d => {
+        .filter((d: Donation) => {
           try {
             return isWithinInterval(new Date(d.date), { start: monthStart, end: monthEnd });
           } catch {
@@ -129,12 +153,12 @@ const Dashboard: React.FC = () => {
             return false;
           }
         })
-        .map(d => d.donorId)
+        .map((d: Donation) => d.donorId)
     ).size;
 
     // Total donations this month
     const donationsThisMonth = validDonations
-      .filter(d => {
+      .filter((d: Donation) => {
         try {
           return isWithinInterval(new Date(d.date), { start: monthStart, end: monthEnd });
         } catch {
@@ -142,11 +166,11 @@ const Dashboard: React.FC = () => {
           return false;
         }
       })
-      .reduce((sum, d) => sum + d.amount, 0);
+      .reduce((sum: number, d: Donation) => sum + d.amount, 0);
 
     // Total expenses this month
     const expensesThisMonth = validTransactions
-      .filter(t => {
+      .filter((t: Transaction) => {
         try {
           const transactionDate = t.createdAt?.toDate();
           return transactionDate && 
@@ -157,12 +181,12 @@ const Dashboard: React.FC = () => {
           return false;
         }
       })
-      .reduce((sum, t) => sum + t.amount, 0);
+      .reduce((sum: number, t: Transaction) => sum + t.amount, 0);
 
     // Total expenses all time
     const totalExpenses = validTransactions
-      .filter(t => t.type === 'DEBIT')
-      .reduce((sum, t) => sum + t.amount, 0);
+      .filter((t: Transaction) => t.type === 'DEBIT')
+      .reduce((sum: number, t: Transaction) => sum + t.amount, 0);
 
     // Active beneficiaries
     const validBeneficiaries = beneficiaries.filter(isBeneficiary);
@@ -188,21 +212,22 @@ const Dashboard: React.FC = () => {
       activeDonorsThisMonth,
       totalBeneficiaries: beneficiaries.length,
       activeBeneficiaries,
-      totalDonations: validDonations.reduce((sum, d) => sum + d.amount, 0),
+      totalDonations: validDonations.reduce((sum: number, d: Donation) => sum + d.amount, 0),
       donationsThisMonth,
       totalExpenses,
       expensesThisMonth,
       completedFeedingRounds,
       upcomingFeedingRounds
     };
-  }, [donors, donations, feedingRounds?.rounds, beneficiaries, data?.transactions]);
+  }, [donors, donations, feedingRounds?.rounds, beneficiaries, transactions?.transactions]);
 
   // Prepare monthly donations chart data
   const monthlyDonationsData = useMemo(() => {
-    if (!donations || !data?.transactions) return [];
+    if (!donations || !transactions?.transactions) return [];
 
-    const validDonations = donations.filter(isDonation);
-    const validTransactions = data.transactions.transactions || [];
+    const donationArray = Array.isArray(donations) ? donations : [];
+    const validDonations = donationArray.filter(isDonation);
+    const validTransactions = transactions.transactions;
     
     const last6Months = Array.from({ length: 6 }, (_, i) => {
       const date = new Date();
@@ -217,7 +242,7 @@ const Dashboard: React.FC = () => {
     return last6Months.map(({ month, start, end }) => {
       // Calculate total donations for this month
       const monthlyDonations = validDonations
-        .filter(d => {
+        .filter((d: Donation) => {
           try {
             return isWithinInterval(new Date(d.date), { start, end });
           } catch {
@@ -225,11 +250,11 @@ const Dashboard: React.FC = () => {
             return false;
           }
         })
-        .reduce((sum, d) => sum + d.amount, 0);
+        .reduce((sum: number, d: Donation) => sum + d.amount, 0);
 
       // Calculate total expenses for this month
       const monthlyExpenses = validTransactions
-        .filter(t => {
+        .filter((t: Transaction) => {
           try {
             const transactionDate = t.createdAt?.toDate();
             return transactionDate && 
@@ -240,7 +265,7 @@ const Dashboard: React.FC = () => {
             return false;
           }
         })
-        .reduce((sum, t) => sum + t.amount, 0);
+        .reduce((sum: number, t: Transaction) => sum + t.amount, 0);
 
       return {
         month,
@@ -249,105 +274,22 @@ const Dashboard: React.FC = () => {
         balance: monthlyDonations - monthlyExpenses
       };
     });
-  }, [donations, data?.transactions]);
+  }, [donations, transactions?.transactions]);
 
   // Prepare beneficiary categories chart data
   const beneficiaryCategories = useMemo(() => {
     if (!beneficiaries) return [];
 
-    const categories = beneficiaries.reduce((acc, b) => {
+    const categories = beneficiaries.reduce((acc: Record<string, number>, b: Beneficiary) => {
       acc[b.supportType] = (acc[b.supportType] || 0) + 1;
       return acc;
-    }, {} as Record<string, number>);
+    }, {});
 
     return Object.entries(categories).map(([name, value]) => ({
       name,
       value
     }));
   }, [beneficiaries]);
-
-  // Prepare monthly donations and expenses chart data
-  const monthlyFinancialData = useMemo(() => {
-    if (!donations || !data?.transactions || !data?.treasury) return [];
-
-    const validDonations = donations.filter(isDonation);
-    const validTransactions = data.transactions.transactions || [];
-    
-    const last6Months = Array.from({ length: 6 }, (_, i) => {
-      const date = new Date();
-      date.setMonth(date.getMonth() - i);
-      return {
-        month: format(date, 'MMM yyyy'),
-        start: startOfMonth(date),
-        end: endOfMonth(date)
-      };
-    }).reverse();
-
-    // Initialize data structure for categories
-    const categoryData = data.treasury.reduce((acc, category) => {
-      acc[category.id] = {
-        name: category.name,
-        color: category.color || COLORS[Math.floor(Math.random() * COLORS.length)]
-      };
-      return acc;
-    }, {} as Record<string, { name: string; color: string }>);
-
-    return last6Months.map(({ month, start, end }) => {
-      // Get donations for this month
-      const monthDonations = validDonations
-        .filter(d => {
-          const donationDate = new Date(d.date);
-          return isWithinInterval(donationDate, { start, end });
-        })
-        .reduce((acc, d) => {
-          if (d.categoryId) {
-            acc[d.categoryId] = (acc[d.categoryId] || 0) + d.amount;
-          }
-          return acc;
-        }, {} as Record<string, number>);
-
-      // Get expenses for this month
-      const monthExpenses = validTransactions
-        .filter(t => {
-          const transactionDate = t.createdAt.toDate();
-          return isWithinInterval(transactionDate, { start, end }) && t.type === 'DEBIT';
-        })
-        .reduce((acc, t) => {
-          if (t.category) {
-            acc[t.category] = (acc[t.category] || 0) + t.amount;
-          }
-          return acc;
-        }, {} as Record<string, number>);
-
-      // Combine data for all categories
-      const result: any = { month };
-      Object.keys(categoryData).forEach(categoryId => {
-        const categoryName = categoryData[categoryId].name;
-        result[`${categoryName} Donations`] = monthDonations[categoryId] || 0;
-        result[`${categoryName} Expenses`] = monthExpenses[categoryId] || 0;
-      });
-
-      return result;
-    });
-  }, [donations, data?.transactions, data?.treasury]);
-
-  // Extract line colors and data keys for the chart
-  const lineChartConfig = useMemo(() => {
-    if (!data?.treasury) return { lines: [], colors: [] };
-
-    return data.treasury.reduce((acc, category) => {
-      const color = category.color || COLORS[Math.floor(Math.random() * COLORS.length)];
-      acc.lines.push(
-        `${category.name} Donations`,
-        `${category.name} Expenses`
-      );
-      acc.colors.push(
-        color,
-        `${color}88` // Add transparency for expenses
-      );
-      return acc;
-    }, { lines: [] as string[], colors: [] as string[] });
-  }, [data?.treasury]);
 
   if (isLoading) {
     return (
@@ -463,41 +405,6 @@ const Dashboard: React.FC = () => {
         </Grid>
       </Grid>
 
-      {/* Enhanced Financial Chart */}
-      <Grid container spacing={3} sx={{ mt: 2 }}>
-        <Grid item xs={12}>
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                Monthly Financial Overview
-              </Typography>
-              <Box sx={{ width: '100%', height: 400 }}>
-                <ResponsiveContainer>
-                  <LineChart data={monthlyFinancialData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="month" />
-                    <YAxis />
-                    <Tooltip />
-                    <Legend />
-                    {lineChartConfig.lines.map((line, index) => (
-                      <Line
-                        key={line}
-                        type="monotone"
-                        dataKey={line}
-                        stroke={lineChartConfig.colors[index]}
-                        strokeWidth={2}
-                        dot={{ r: 4 }}
-                        activeDot={{ r: 6 }}
-                      />
-                    ))}
-                  </LineChart>
-                </ResponsiveContainer>
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
-
       {/* Charts */}
       <Grid container spacing={3}>
         {/* Monthly Financial Trends */}
@@ -507,46 +414,48 @@ const Dashboard: React.FC = () => {
               <Typography variant="h6" gutterBottom>
                 Monthly Financial Trends
               </Typography>
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={monthlyDonationsData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="month" />
-                  <YAxis />
-                  <Tooltip 
-                    formatter={(value: number) => `$${value.toLocaleString()}`}
-                    labelFormatter={(label) => `Month: ${label}`}
-                  />
-                  <Legend />
-                  <Line 
-                    type="monotone" 
-                    dataKey="donations" 
-                    stroke="#4CAF50"
-                    strokeWidth={2}
-                    name="Donations"
-                    dot={{ r: 4 }}
-                    activeDot={{ r: 6 }}
-                  />
-                  <Line 
-                    type="monotone" 
-                    dataKey="expenses" 
-                    stroke="#f44336"
-                    strokeWidth={2}
-                    name="Expenses"
-                    dot={{ r: 4 }}
-                    activeDot={{ r: 6 }}
-                  />
-                  <Line 
-                    type="monotone" 
-                    dataKey="balance" 
-                    stroke="#2196F3"
-                    strokeWidth={2}
-                    name="Net Balance"
-                    dot={{ r: 4 }}
-                    activeDot={{ r: 6 }}
-                    strokeDasharray="5 5"
-                  />
-                </LineChart>
-              </ResponsiveContainer>
+              <Box sx={{ width: '100%', height: 300 }}>
+                <ResponsiveContainer>
+                  <LineChart data={monthlyDonationsData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="month" />
+                    <YAxis />
+                    <Tooltip 
+                      formatter={(value: number) => `$${value.toLocaleString()}`}
+                      labelFormatter={(label) => `Month: ${label}`}
+                    />
+                    <Legend />
+                    <Line 
+                      type="monotone" 
+                      dataKey="donations" 
+                      stroke="#4CAF50"
+                      strokeWidth={2}
+                      name="Donations"
+                      dot={{ r: 4 }}
+                      activeDot={{ r: 6 }}
+                    />
+                    <Line 
+                      type="monotone" 
+                      dataKey="expenses" 
+                      stroke="#f44336"
+                      strokeWidth={2}
+                      name="Expenses"
+                      dot={{ r: 4 }}
+                      activeDot={{ r: 6 }}
+                    />
+                    <Line 
+                      type="monotone" 
+                      dataKey="balance" 
+                      stroke="#2196F3"
+                      strokeWidth={2}
+                      name="Net Balance"
+                      dot={{ r: 4 }}
+                      activeDot={{ r: 6 }}
+                      strokeDasharray="5 5"
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </Box>
             </CardContent>
           </Card>
         </Grid>
@@ -558,25 +467,27 @@ const Dashboard: React.FC = () => {
               <Typography variant="h6" gutterBottom>
                 Beneficiary Categories
               </Typography>
-              <ResponsiveContainer width="100%" height={300}>
-                <PieChart>
-                  <Pie
-                    data={beneficiaryCategories}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={false}
-                    outerRadius={80}
-                    fill="#8884d8"
-                    dataKey="value"
-                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                  >
-                    {beneficiaryCategories.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
+              <Box sx={{ width: '100%', height: 300 }}>
+                <ResponsiveContainer>
+                  <PieChart>
+                    <Pie
+                      data={beneficiaryCategories}
+                      cx="50%"
+                      cy="50%"
+                      labelLine={false}
+                      outerRadius={80}
+                      fill="#8884d8"
+                      dataKey="value"
+                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                    >
+                      {beneficiaryCategories.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              </Box>
             </CardContent>
           </Card>
         </Grid>
