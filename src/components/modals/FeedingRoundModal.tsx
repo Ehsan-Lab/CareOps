@@ -34,7 +34,24 @@ export const FeedingRoundModal: React.FC<FeedingRoundModalProps> = ({
   const [submitError, setSubmitError] = React.useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const { treasuryCategories, setFeedingRounds, feedingRounds } = useStore();
-  const feedingCategory = treasuryCategories.find(c => c.name.toLowerCase() === 'feeding');
+  
+  // Look for a feeding category with more flexible matching
+  const feedingCategory = treasuryCategories.find(c => 
+    c.name.toLowerCase().includes('feed') || 
+    c.name.toLowerCase().includes('meal') || 
+    c.name.toLowerCase().includes('food')
+  );
+
+  // Show warning if no feeding category is found
+  React.useEffect(() => {
+    if (!feedingCategory && treasuryCategories.length > 0) {
+      setSubmitError(
+        'No feeding category found in treasury. Please create a category with "feeding", "meal", or "food" in its name.'
+      );
+    } else {
+      setSubmitError(null);
+    }
+  }, [feedingCategory, treasuryCategories]);
   
   const { register, handleSubmit, watch, reset, formState: { errors } } = useForm<FeedingRoundFormData>({
     defaultValues: round ? {
