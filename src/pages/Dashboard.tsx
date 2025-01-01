@@ -74,14 +74,6 @@ interface DashboardData {
   payments: Payment[];
 }
 
-// Type guard for Donation
-const isDonation = (d: unknown): d is Donation => {
-  return d !== null && typeof d === 'object' && 
-    'date' in d && typeof (d as Donation).date === 'string' && 
-    'amount' in d && typeof (d as Donation).amount === 'number' && 
-    'donorId' in d && typeof (d as Donation).donorId === 'string';
-};
-
 // Type guard for Beneficiary
 const isBeneficiary = (b: unknown): b is Beneficiary => {
   return b !== null && typeof b === 'object' && 
@@ -219,8 +211,19 @@ const Dashboard: React.FC = () => {
   const monthlyDonationsData = useMemo(() => {
     if (!donations || !payments) return [];
 
-    const donationArray = Array.isArray(donations) ? donations : [];
-    const validDonations = donationArray.filter(isDonation);
+    // Use the same validation logic as stats calculation
+    const donationArray = Array.isArray(donations) 
+      ? donations 
+      : (donations as PaginatedDonations)?.donations || [];
+    
+    const validDonations = donationArray.filter((d: Donation) => {
+      if (!d || !d.amount || !d.date) {
+        logger.warn('Invalid donation data', { donation: d }, 'Dashboard');
+        return false;
+      }
+      return true;
+    });
+
     const validPayments = payments.filter((p: Payment) => p.status === 'COMPLETED');
     
     const last6Months = Array.from({ length: 6 }, (_, i) => {
@@ -234,11 +237,12 @@ const Dashboard: React.FC = () => {
     }).reverse();
 
     return last6Months.map(({ month, start, end }) => {
-      // Calculate total donations for this month
+      // Calculate total donations for this month using the same logic as stats
       const monthlyDonations = validDonations
         .filter((d: Donation) => {
           try {
-            return isWithinInterval(new Date(d.date), { start, end });
+            const donationDate = new Date(d.date);
+            return isWithinInterval(donationDate, { start, end });
           } catch (error) {
             logger.warn('Invalid date in donation', { donation: d, error }, 'Dashboard');
             return false;
@@ -248,7 +252,7 @@ const Dashboard: React.FC = () => {
 
       // Calculate total expenses for this month from payments
       const monthlyExpenses = validPayments
-        .filter((p) => {
+        .filter((p: Payment) => {
           try {
             const paymentDate = new Date(p.date);
             return isWithinInterval(paymentDate, { start, end });
@@ -257,7 +261,7 @@ const Dashboard: React.FC = () => {
             return false;
           }
         })
-        .reduce((sum: number, p) => sum + (p.amount || 0), 0);
+        .reduce((sum: number, p: Payment) => sum + (p.amount || 0), 0);
 
       return {
         month,
@@ -266,7 +270,7 @@ const Dashboard: React.FC = () => {
         balance: monthlyDonations - monthlyExpenses
       };
     });
-  }, [donations, data?.payments]);
+  }, [donations, payments]);
 
   // Prepare beneficiary categories chart data
   const beneficiaryCategories = useMemo(() => {
