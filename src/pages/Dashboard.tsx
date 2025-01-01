@@ -14,6 +14,7 @@ import { format, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
 import { useAllData } from '../hooks/useFirebaseQuery';
 import { FeedingRound } from '../types';
 import { DocumentSnapshot } from 'firebase/firestore';
+import { logger } from '../utils/logger';
 
 // Chart colors
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042'];
@@ -83,6 +84,26 @@ const Dashboard: React.FC = () => {
     feedingRounds = { rounds: [], lastDoc: null } as PaginatedFeedingRounds,
     beneficiaries = [] as Beneficiary[]
   } = data || {};
+
+  const validDonations = useMemo(() => {
+    return donations?.filter(d => {
+      if (!d.createdAt) {
+        logger.warn('Invalid date in donation', { donationId: d.id }, 'Dashboard');
+        return false;
+      }
+      return true;
+    }) || [];
+  }, [donations]);
+
+  const validTransactions = useMemo(() => {
+    return transactions?.filter(t => {
+      if (!t.createdAt) {
+        logger.warn('Invalid date in transaction', { transactionId: t.id }, 'Dashboard');
+        return false;
+      }
+      return true;
+    }) || [];
+  }, [transactions]);
 
   // Calculate statistics and prepare chart data
   const stats = useMemo(() => {

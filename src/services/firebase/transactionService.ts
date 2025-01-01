@@ -16,11 +16,14 @@ import {
   where,
   DocumentSnapshot,
   runTransaction,
-  addDoc
+  addDoc,
+  QueryDocumentSnapshot,
+  DocumentData
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { COLLECTIONS } from './constants';
 import { Transaction } from '../../types';
+import { logger } from '../../utils/logger';
 
 const MAX_RETRY_ATTEMPTS = 3;
 const BATCH_SIZE = 10;
@@ -84,6 +87,7 @@ export const transactionServices = {
     reference: string;
   }) => {
     try {
+      logger.debug('Recording transaction', data, 'TransactionService');
       const now = Timestamp.now();
       const transactionData = {
         ...data,
@@ -93,11 +97,15 @@ export const transactionServices = {
       };
 
       const docRef = await addDoc(collection(db, COLLECTIONS.TRANSACTIONS), transactionData);
-      console.log('Recorded transaction:', { id: docRef.id, ...transactionData }); // Debug log
+      logger.info('Transaction recorded successfully', { 
+        id: docRef.id,
+        type: transactionData.type,
+        amount: transactionData.amount
+      }, 'TransactionService');
       return docRef.id;
     } catch (error) {
-      console.error('Error recording transaction:', error);
-      throw new Error(`Failed to record transaction: ${error.message}`);
+      logger.error('Error recording transaction', error, 'TransactionService');
+      throw error;
     }
   },
 
@@ -119,20 +127,25 @@ export const transactionServices = {
     lastDoc: DocumentSnapshot | null;
   }> => {
     try {
-      let q = query(
-        collection(db, COLLECTIONS.TRANSACTIONS),
+      logger.debug('Fetching transactions', { pageSize, startAfterDoc, type }, 'TransactionService');
+      
+      let queryConstraints = [
         orderBy('createdAt', 'desc'),
         limit(pageSize)
-      );
+      ];
 
       if (type) {
-        q = query(q, where('type', '==', type));
+        queryConstraints.push(where('type', '==', type));
       }
 
       if (startAfterDoc) {
-        q = query(q, startAfter(startAfterDoc));
+        queryConstraints.push(startAfter(startAfterDoc));
       }
 
+      const q = query(
+        collection(db, COLLECTIONS.TRANSACTIONS),
+        ...queryConstraints
+      );
       const querySnapshot = await retryOperation(async () => await getDocs(q));
       
       const transactions = querySnapshot.docs.map(doc => ({
@@ -140,14 +153,19 @@ export const transactionServices = {
         ...doc.data()
       })) as Transaction[];
 
-      console.log('Fetched transactions:', transactions); // Debug log
+      logger.info('Successfully fetched transactions', { 
+        count: transactions.length,
+        hasMore: transactions.length === pageSize,
+        type: type,
+        startAfterDoc: startAfterDoc
+      }, 'TransactionService');
 
       return {
         transactions,
         lastDoc: querySnapshot.docs[querySnapshot.docs.length - 1] || null
       };
     } catch (error) {
-      console.error('Error fetching transactions:', error);
+      logger.error('Error fetching transactions', error, 'TransactionService');
       throw new Error(`Failed to fetch transactions: ${error.message}`);
     }
   }

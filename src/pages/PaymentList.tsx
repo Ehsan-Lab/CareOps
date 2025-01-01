@@ -8,7 +8,8 @@ import { PaymentFilters } from '../components/PaymentFilters';
 import { paymentServices } from '../services/firebase/paymentService';
 import { Payment, PaymentStatus, PaymentType } from '../types';
 import { useQueryClient } from '@tanstack/react-query';
-import { calculateMonthlyTotals, formatAmount } from '../utils/formatters';
+import { calculateMonthlyTotals, formatCurrency } from '../utils/formatters';
+import { logger } from '../utils/logger';
 
 function PaymentList() {
   const { payments = [], treasuryCategories = [], beneficiaries = [] } = useFirebaseQuery();
@@ -50,10 +51,18 @@ function PaymentList() {
     [groupedPayments]
   );
 
-  const monthlyTotals = useMemo(() => 
-    calculateMonthlyTotals(groupedPayments),
-    [groupedPayments]
-  );
+  const monthlyTotals = useMemo(() => {
+    const startDate = new Date();
+    startDate.setMonth(startDate.getMonth() - 5); // Last 6 months
+    const endDate = new Date();
+    
+    const paymentItems = filteredPayments.map(payment => ({
+      amount: payment.amount,
+      date: payment.date
+    }));
+    
+    return calculateMonthlyTotals(paymentItems, startDate, endDate);
+  }, [filteredPayments]);
 
   const handleBulkStatusUpdate = async (status: PaymentStatus) => {
     if (!selectedPayments.length) return;
@@ -67,7 +76,7 @@ function PaymentList() {
       queryClient.invalidateQueries({ queryKey: ['payments'] });
       setSelectedPayments([]);
     } catch (error) {
-      console.error('Error updating payment statuses:', error);
+      logger.error('Error updating payment statuses', error, 'PaymentList');
       alert('Failed to update payment statuses');
     }
   };
@@ -100,6 +109,8 @@ function PaymentList() {
               <select
                 onChange={(e) => handleBulkStatusUpdate(e.target.value as PaymentStatus)}
                 className="rounded-md border-gray-300 text-sm"
+                aria-label="Bulk status update"
+                title="Update status for selected payments"
               >
                 <option value="">Update Status</option>
                 <option value="COMPLETED">Mark Completed</option>
@@ -137,7 +148,7 @@ function PaymentList() {
         {sortedMonths.map(month => {
           const monthPayments = groupedPayments[month];
           const isExpanded = selectedMonth === month;
-          const total = monthlyTotals[month];
+          const total = monthlyTotals[format(new Date(month), 'MMM yyyy')] || 0;
           
           return (
             <div key={month} className="bg-white rounded-lg shadow">
@@ -151,7 +162,7 @@ function PaymentList() {
                       {format(new Date(month), 'MMMM yyyy')}
                     </h3>
                     <p className="text-sm text-gray-500">
-                      {monthPayments.length} payments · Total: ${formatAmount(total)}
+                      {monthPayments.length} payments · Total: {formatCurrency(total)}
                     </p>
                   </div>
                 </div>

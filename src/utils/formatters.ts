@@ -1,124 +1,103 @@
-import { Timestamp } from 'firebase/firestore';
+import { format, parseISO } from 'date-fns';
+import { logger } from './logger';
 
-export const formatAmount = (amount: number | string | undefined): string => {
-  if (amount === undefined || amount === null) return '0.00';
-  
-  const numericAmount = typeof amount === 'string' ? parseFloat(amount) : amount;
-  if (isNaN(numericAmount)) return '0.00';
-  
-  return numericAmount.toFixed(2);
+export const formatCurrency = (value: number): string => {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(value);
 };
 
 export const calculateMonthlyTotals = (
-  groupedItems: Record<string, Array<{ amount: number | string | undefined }>>
+  items: Array<{ amount: number; date: string }>,
+  startDate: Date,
+  endDate: Date
 ): Record<string, number> => {
-  return Object.entries(groupedItems).reduce((totals, [month, items]) => {
-    const total = items.reduce((sum, item) => {
-      if (!item.amount) return sum;
-      const amount = typeof item.amount === 'string' ? parseFloat(item.amount) : item.amount;
-      return sum + (isNaN(amount) ? 0 : amount);
-    }, 0);
-    totals[month] = total;
-    return totals;
-  }, {} as Record<string, number>);
+  try {
+    const monthlyTotals: Record<string, number> = {};
+    
+    // Initialize all months with 0
+    let currentDate = new Date(startDate);
+    while (currentDate <= endDate) {
+      const monthKey = format(currentDate, 'MMM yyyy');
+      monthlyTotals[monthKey] = 0;
+      currentDate.setMonth(currentDate.getMonth() + 1);
+    }
+
+    // Sum up amounts for each month
+    items.forEach(item => {
+      try {
+        const date = parseISO(item.date);
+        const monthKey = format(date, 'MMM yyyy');
+        if (monthlyTotals.hasOwnProperty(monthKey)) {
+          monthlyTotals[monthKey] += item.amount;
+        }
+      } catch (error) {
+        logger.warn('Invalid date in item', { item, error }, 'Formatters');
+      }
+    });
+
+    return monthlyTotals;
+  } catch (error) {
+    logger.error('Error calculating monthly totals', { error }, 'Formatters');
+    return {};
+  }
 };
 
-export const formatCurrency = (amount: number | string | undefined, locale = 'en-US', currency = 'USD'): string => {
-  const numericAmount = ensureNumericAmount(amount);
-  return new Intl.NumberFormat(locale, {
-    style: 'currency',
-    currency: currency
-  }).format(numericAmount);
-};
-
-export const ensureNumericAmount = (amount: number | string | undefined): number => {
-  if (amount === undefined || amount === null) return 0;
-  const numericAmount = typeof amount === 'string' ? parseFloat(amount) : amount;
-  return isNaN(numericAmount) ? 0 : numericAmount;
-};
-
-export const calculateTotalUnits = (amount: number, unitPrice: number): number => {
-  if (!unitPrice || unitPrice <= 0) return 0;
-  return amount / unitPrice;
-};
-
-const isFirestoreTimestamp = (value: any): value is Timestamp => {
-  return value && typeof value === 'object' && 'seconds' in value && 'nanoseconds' in value;
-};
-
-const convertToDate = (value: string | Date | Timestamp | undefined | null): Date | null => {
+export const toDate = (value: string | Date | null | undefined): Date | null => {
   if (!value) return null;
 
   try {
-    if (isFirestoreTimestamp(value)) {
-      return value.toDate();
+    if (value instanceof Date) return value;
+    if (typeof value !== 'string') {
+      logger.warn('Invalid date value type', { type: typeof value, value }, 'Formatters');
+      return null;
     }
 
-    if (value instanceof Date) {
-      return value;
+    const date = parseISO(value);
+    if (isNaN(date.getTime())) {
+      logger.warn('Invalid date string', { value }, 'Formatters');
+      return null;
     }
 
-    if (typeof value === 'string') {
-      const date = new Date(value);
-      if (isNaN(date.getTime())) {
-        console.error('Invalid date string:', value);
-        return null;
-      }
-      return date;
-    }
-
-    return null;
+    return date;
   } catch (error) {
-    console.error('Error converting to date:', error);
+    logger.error('Error converting to date', { error, value }, 'Formatters');
     return null;
   }
 };
 
-export const formatDate = (value: string | Date | Timestamp | undefined | null): string => {
-  const date = convertToDate(value);
-  if (!date) return 'N/A';
-  
+export const formatDate = (value: string | Date | null | undefined): string => {
   try {
-    return new Intl.DateTimeFormat('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric'
-    }).format(date);
+    const date = toDate(value);
+    if (!date) return '';
+    return format(date, 'MMM d, yyyy');
   } catch (error) {
-    console.error('Error formatting date:', error);
-    return 'Invalid Date';
+    logger.error('Error formatting date', { error, value }, 'Formatters');
+    return '';
   }
 };
 
-export const formatDateTime = (value: string | Date | Timestamp | undefined | null): string => {
-  const date = convertToDate(value);
-  if (!date) return 'N/A';
-  
+export const formatDateTime = (value: string | Date | null | undefined): string => {
   try {
-    return new Intl.DateTimeFormat('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    }).format(date);
+    const date = toDate(value);
+    if (!date) return '';
+    return format(date, 'MMM d, yyyy h:mm a');
   } catch (error) {
-    console.error('Error formatting datetime:', error);
-    return 'Invalid Date';
+    logger.error('Error formatting datetime', { error, value }, 'Formatters');
+    return '';
   }
 };
 
-export const formatMonthYear = (value: string | Date | Timestamp | undefined | null): string => {
-  const date = convertToDate(value);
-  if (!date) return 'N/A';
-  
+export const formatMonthYear = (value: string | Date | null | undefined): string => {
   try {
-    return new Intl.DateTimeFormat('en-US', {
-      year: 'numeric',
-      month: 'long'
-    }).format(date);
+    const date = toDate(value);
+    if (!date) return '';
+    return format(date, 'MMMM yyyy');
   } catch (error) {
-    console.error('Error formatting month/year:', error);
-    return 'Invalid Date';
+    logger.error('Error formatting month/year', { error, value }, 'Formatters');
+    return '';
   }
 };

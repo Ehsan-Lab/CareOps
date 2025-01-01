@@ -4,27 +4,32 @@ import { useStore } from '../store';
 import { format } from 'date-fns';
 import { DonationModal } from '../components/modals/DonationModal';
 import { useFirebaseQuery } from '../hooks/useFirebaseQuery';
-import { Donation } from '../types';
+import { Donation, Donor, TreasuryCategory } from '../types';
+import { logger } from '../utils/logger';
 
 const DonationList: React.FC = () => {
-  const { donations, donors, treasuryCategories } = useFirebaseQuery();
+  const { donations: donationsData, donors, treasuryCategories, isLoading, error } = useFirebaseQuery();
   const [isAddModalOpen, setIsAddModalOpen] = React.useState(false);
   const [deletingIds, setDeletingIds] = React.useState<string[]>([]);
   const [selectedCategory, setSelectedCategory] = React.useState<string>('all');
   const [sortDirection, setSortDirection] = React.useState<'asc' | 'desc'>('desc');
 
+  // Extract the donations array from the donations object
+  const donations = Array.isArray(donationsData) ? donationsData : (donationsData?.donations || []);
+
   const getDonorName = (donorId: string) => {
-    const donor = donors?.find(d => d.id === donorId);
+    const donor = donors?.find((d: Donor) => d.id === donorId);
     return donor?.name || 'Unknown Donor';
   };
 
   const getCategoryName = (categoryId: string) => {
-    const category = treasuryCategories?.find(c => c.id === categoryId);
+    const category = treasuryCategories?.find((c: TreasuryCategory) => c.id === categoryId);
     return category?.name || 'Unknown Category';
   };
 
   const handleDelete = (id: string) => {
     // Implement delete logic here
+    logger.debug('Delete clicked for donation', { id }, 'DonationList');
   };
 
   const toggleSortDirection = () => {
@@ -32,17 +37,26 @@ const DonationList: React.FC = () => {
   };
 
   const filteredAndSortedDonations = React.useMemo(() => {
-    if (!donations) return [];
+    logger.debug('Processing donations', { 
+      count: donations?.length,
+      selectedCategory,
+      sortDirection 
+    }, 'DonationList');
+
+    if (!Array.isArray(donations)) {
+      logger.warn('Donations is not an array', { donations }, 'DonationList');
+      return [];
+    }
 
     let filtered = [...donations];
     
     // Apply category filter
     if (selectedCategory !== 'all') {
-      filtered = filtered.filter(donation => donation.categoryId === selectedCategory);
+      filtered = filtered.filter((donation: Donation) => donation.categoryId === selectedCategory);
     }
 
     // Sort by date
-    filtered.sort((a, b) => {
+    filtered.sort((a: Donation, b: Donation) => {
       const dateA = new Date(a.date).getTime();
       const dateB = new Date(b.date).getTime();
       return sortDirection === 'asc' ? dateA - dateB : dateB - dateA;
@@ -50,6 +64,22 @@ const DonationList: React.FC = () => {
 
     return filtered;
   }, [donations, selectedCategory, sortDirection]);
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center items-center min-h-screen">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-rose-600"></div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-4 text-red-600">
+        Error loading donations. Please try again later.
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -88,7 +118,7 @@ const DonationList: React.FC = () => {
             className="rounded-md border-gray-300 py-1.5 text-gray-900 shadow-sm focus:border-rose-500 focus:ring-rose-500 sm:text-sm"
           >
             <option value="all">All Categories</option>
-            {treasuryCategories?.map((category) => (
+            {treasuryCategories?.map((category: TreasuryCategory) => (
               <option key={category.id} value={category.id}>
                 {category.name}
               </option>

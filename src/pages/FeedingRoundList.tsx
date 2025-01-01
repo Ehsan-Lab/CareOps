@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Utensils, Plus, Play, CheckCircle, Pencil, Trash2, Camera, ImageOff, ChevronDown, ChevronUp } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAllData } from '../hooks/useFirebaseQuery';
@@ -8,6 +8,7 @@ import { feedingRoundServices } from '../services/firebase/feedingRoundService';
 import { format } from 'date-fns';
 import { FeedingRound, Donor, Beneficiary, Donation, Payment, TreasuryCategory, Transaction } from '../types';
 import { DocumentSnapshot, DocumentData } from 'firebase/firestore';
+import { logger } from '../utils/logger';
 
 interface PaginatedFeedingRounds {
   rounds: FeedingRound[];
@@ -41,69 +42,59 @@ const FeedingRoundList: React.FC = () => {
   const [updatingStatus, setUpdatingStatus] = useState<string | null>(null);
 
   // Validate and transform feeding rounds data
-  const validFeedingRounds = React.useMemo(() => {
-    console.log('FeedingRoundList: Processing feedingRounds:', feedingRounds);
-    
+  const validFeedingRounds = useMemo(() => {
+    logger.debug('Processing feeding rounds', { count: feedingRounds?.rounds?.length }, 'FeedingRoundList');
+
     if (!feedingRounds?.rounds) {
-      console.warn('FeedingRoundList: No rounds array in feedingRounds:', feedingRounds);
+      logger.warn('No rounds array in feedingRounds', { feedingRounds }, 'FeedingRoundList');
       return [];
     }
 
-    const filtered = feedingRounds.rounds.filter((round: FeedingRound) => {
-      // Basic validation of required fields
-      if (!round || typeof round !== 'object') {
-        console.warn('FeedingRoundList: Invalid round object:', round);
+    const filtered = feedingRounds.rounds.filter(round => {
+      if (!round) {
+        logger.warn('Invalid round object', { round }, 'FeedingRoundList');
         return false;
       }
-      if (!round.id || typeof round.id !== 'string') {
-        console.warn('FeedingRoundList: Missing or invalid id:', round);
+
+      if (!round.id) {
+        logger.warn('Missing or invalid id', { round }, 'FeedingRoundList');
         return false;
       }
-      if (!round.categoryId || typeof round.categoryId !== 'string') {
-        console.warn('FeedingRoundList: Missing or invalid categoryId:', round);
+
+      if (!round.categoryId) {
+        logger.warn('Missing or invalid categoryId', { round }, 'FeedingRoundList');
         return false;
       }
-      
-      // Ensure date is valid
-      try {
-        new Date(round.date).toISOString();
-      } catch {
-        console.warn('FeedingRoundList: Invalid date, using current date:', round);
-        round.date = new Date().toISOString().split('T')[0];
+
+      if (!round.createdAt) {
+        logger.warn('Invalid date, using current date', { round }, 'FeedingRoundList');
+        return false;
       }
-      
-      // Ensure numeric fields are valid
-      if (typeof round.allocatedAmount !== 'number') {
-        console.warn('FeedingRoundList: Invalid allocatedAmount:', round);
-        round.allocatedAmount = 0;
+
+      if (!round.allocatedAmount || round.allocatedAmount <= 0) {
+        logger.warn('Invalid allocatedAmount', { round }, 'FeedingRoundList');
+        return false;
       }
-      if (typeof round.unitPrice !== 'number') {
-        console.warn('FeedingRoundList: Invalid unitPrice:', round);
-        round.unitPrice = 0;
+
+      if (!round.unitPrice || round.unitPrice <= 0) {
+        logger.warn('Invalid unitPrice', { round }, 'FeedingRoundList');
+        return false;
       }
-      
-      // Ensure arrays are valid
+
       if (!Array.isArray(round.photos)) {
-        console.warn('FeedingRoundList: Invalid photos array:', round);
-        round.photos = [];
+        logger.warn('Invalid photos array', { round }, 'FeedingRoundList');
+        return false;
       }
-      
-      // Ensure strings are valid
-      round.description = round.description || '';
-      round.observations = round.observations || '';
-      round.specialCircumstances = round.specialCircumstances || '';
-      round.driveLink = round.driveLink || '';
-      
-      // Ensure status is valid
-      if (!['PENDING', 'IN_PROGRESS', 'COMPLETED'].includes(round.status)) {
-        console.warn('FeedingRoundList: Invalid status:', round);
-        round.status = 'PENDING';
+
+      if (!['PENDING', 'COMPLETED', 'CANCELLED'].includes(round.status)) {
+        logger.warn('Invalid status', { round }, 'FeedingRoundList');
+        return false;
       }
-      
+
       return true;
     });
 
-    console.log('FeedingRoundList: Filtered rounds:', filtered.length);
+    logger.debug('Filtered rounds', { count: filtered.length }, 'FeedingRoundList');
     return filtered;
   }, [feedingRounds]);
 
@@ -148,6 +139,7 @@ const FeedingRoundList: React.FC = () => {
     if (!hasMore || !lastDoc) return;
 
     try {
+      logger.debug('Loading more rounds', { lastDoc: feedingRounds?.lastDoc }, 'FeedingRoundList');
       const result = await feedingRoundServices.getAll(10, lastDoc);
       
       // Update the query cache with the combined results
@@ -169,7 +161,7 @@ const FeedingRoundList: React.FC = () => {
         setHasMore(false);
       }
     } catch (error) {
-      console.error('Error loading more rounds:', error);
+      logger.error('Error loading more rounds', error, 'FeedingRoundList');
       setHasMore(false);
     }
   };
@@ -195,19 +187,20 @@ const FeedingRoundList: React.FC = () => {
     setIsModalOpen(true);
   };
 
-  const handleStatusUpdate = async (id: string, status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED') => {
-    setUpdatingStatus(id);
+  const handleStatusUpdate = async (id: string, newStatus: string) => {
     try {
+      logger.debug('Updating round status', { id, newStatus }, 'FeedingRoundList');
+      setUpdatingStatus(id);
       // Optimistic update
       const updatedRounds = validFeedingRounds.map(round => 
-        round.id === id ? { ...round, status } : round
+        round.id === id ? { ...round, status: newStatus } : round
       );
       queryClient.setQueryData<AllData>(['all-data'], (oldData) => ({
         ...oldData!,
         feedingRounds: { rounds: updatedRounds, lastDoc }
       }));
 
-      await feedingRoundServices.updateStatus(id, status);
+      await feedingRoundServices.updateStatus(id, newStatus);
       
       // Invalidate and refetch all relevant queries
       await Promise.all([
@@ -215,7 +208,7 @@ const FeedingRoundList: React.FC = () => {
         queryClient.refetchQueries({ queryKey: ['all-data'] })
       ]);
     } catch (error) {
-      console.error('Error updating status:', error);
+      logger.error('Error updating status', error, 'FeedingRoundList');
       // Revert optimistic update
       queryClient.invalidateQueries({ queryKey: ['all-data'] });
       alert('Failed to update status');
@@ -228,6 +221,7 @@ const FeedingRoundList: React.FC = () => {
     if (window.confirm('Are you sure you want to delete this feeding round?')) {
       setIsDeleting(id);
       try {
+        logger.debug('Deleting feeding round', { id }, 'FeedingRoundList');
         // Optimistic update
         const updatedRounds = validFeedingRounds.filter(round => round.id !== id);
         queryClient.setQueryData<AllData>(['all-data'], (oldData) => ({
@@ -246,7 +240,7 @@ const FeedingRoundList: React.FC = () => {
         // Clean up expanded state
         setExpandedId(null);
       } catch (error) {
-        console.error('Error deleting feeding round:', error);
+        logger.error('Error deleting feeding round', error, 'FeedingRoundList');
         // Revert optimistic update
         queryClient.invalidateQueries({ queryKey: ['all-data'] });
         alert('Failed to delete feeding round');

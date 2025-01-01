@@ -2,6 +2,7 @@ import React from 'react';
 import { Link, Outlet, useLocation, NavLink } from 'react-router-dom';
 import { Heart, Users, Wallet, Utensils, Menu, CircleDollarSign, UserRound, CreditCard, FileText, LogOut, LayoutDashboard, DollarSign, Gift, UserCheck } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { DebugModeToggle } from './DebugModeToggle';
 
 const Layout: React.FC = () => {
   const location = useLocation();
@@ -95,6 +96,9 @@ const Layout: React.FC = () => {
           onClick={() => setIsMobileMenuOpen(false)}
         />
       )}
+
+      {/* Debug Mode Toggle */}
+      {process.env.NODE_ENV !== 'production' && <DebugModeToggle />}
     </div>
   );
 };

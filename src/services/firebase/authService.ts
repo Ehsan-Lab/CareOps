@@ -10,6 +10,7 @@ import {
   type User
 } from 'firebase/auth';
 import { auth } from '../../config/firebase';
+import { logger } from '../../utils/logger';
 
 /**
  * @namespace authService
@@ -26,10 +27,12 @@ export const authService = {
    */
   signIn: async (email: string, password: string) => {
     try {
+      logger.info('Attempting sign in', { email }, 'AuthService');
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      logger.info('Sign in successful', { userId: userCredential.user.uid }, 'AuthService');
       return userCredential.user;
     } catch (error) {
-      console.error('Error signing in:', error);
+      logger.error('Error signing in', error, 'AuthService');
       throw error;
     }
   },
@@ -41,9 +44,11 @@ export const authService = {
    */
   signOut: async () => {
     try {
+      logger.info('Attempting sign out', null, 'AuthService');
       await firebaseSignOut(auth);
+      logger.info('Sign out successful', null, 'AuthService');
     } catch (error) {
-      console.error('Error signing out:', error);
+      logger.error('Error signing out', error, 'AuthService');
       throw error;
     }
   },
@@ -68,6 +73,7 @@ export const authService = {
    * @returns {function} Unsubscribe function to remove the listener
    */
   onAuthStateChanged: (callback: (user: User | null) => void) => {
+    logger.debug('Setting up auth state change listener', null, 'AuthService');
     return firebaseOnAuthStateChanged(auth, callback);
   }
 }; 

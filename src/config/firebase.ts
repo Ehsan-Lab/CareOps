@@ -1,6 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
+import { logger } from '../utils/logger';
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -12,7 +13,15 @@ const firebaseConfig = {
 };
 
 // Initialize Firebase
-const app = initializeApp(firebaseConfig);
+let app;
+try {
+  logger.info('Initializing Firebase', null, 'Firebase');
+  app = initializeApp(firebaseConfig);
+  logger.debug('Firebase initialized successfully', null, 'Firebase');
+} catch (error) {
+  logger.error('Error initializing Firebase', error, 'Firebase');
+  throw error;
+}
 
 // Initialize Firestore
 export const db = getFirestore(app);
@@ -26,17 +35,20 @@ let connectionStateListeners: ((status: boolean) => void)[] = [];
 
 export const validateFirebaseConnection = async (): Promise<boolean> => {
   try {
+    logger.debug('Validating Firebase connection', null, 'Firebase');
     // Add your connection validation logic here
     isConnected = true;
+    logger.info('Firebase connection validated', { isConnected }, 'Firebase');
     return true;
   } catch (error) {
-    console.error('Firebase connection validation failed:', error);
+    logger.error('Firebase connection validation failed', error, 'Firebase');
     isConnected = false;
     return false;
   }
 };
 
 export const setConnectionStatus = (status: boolean) => {
+  logger.debug('Setting connection status', { status }, 'Firebase');
   isConnected = status;
   connectionStateListeners.forEach(listener => listener(status));
 };

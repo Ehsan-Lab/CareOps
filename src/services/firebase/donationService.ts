@@ -10,11 +10,22 @@ import {
   getDocs, 
   addDoc, 
   Timestamp,
-  runTransaction
+  runTransaction,
+  updateDoc,
+  deleteDoc,
+  query,
+  where,
+  orderBy,
+  limit,
+  startAfter,
+  QueryDocumentSnapshot,
+  DocumentData
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { COLLECTIONS } from './constants';
 import { transactionServices } from './transactionService';
+import { Donation } from '../../types';
+import { logger } from '../../utils/logger';
 
 /**
  * @interface CreateDonationData
@@ -44,15 +55,37 @@ export const donationServices = {
    * @returns {Promise<Donation[]>} Array of donation objects
    * @throws {Error} If fetching donations fails
    */
-  getAll: async () => {
+  getAll: async (lastDoc?: QueryDocumentSnapshot<DocumentData>) => {
     try {
-      const querySnapshot = await getDocs(collection(db, COLLECTIONS.DONATIONS));
-      return querySnapshot.docs.map(doc => ({
+      logger.debug('Fetching donations', { lastDoc: !!lastDoc }, 'DonationService');
+      
+      let q = query(
+        collection(db, 'donations'),
+        orderBy('createdAt', 'desc'),
+        limit(10)
+      );
+
+      if (lastDoc) {
+        q = query(q, startAfter(lastDoc));
+      }
+
+      const querySnapshot = await getDocs(q);
+      const donations = querySnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
-      }));
+      })) as Donation[];
+
+      logger.info('Successfully fetched donations', { 
+        count: donations.length,
+        hasMore: donations.length === 10 
+      }, 'DonationService');
+
+      return {
+        donations,
+        lastDoc: querySnapshot.docs[querySnapshot.docs.length - 1]
+      };
     } catch (error) {
-      console.error('Error fetching donations:', error);
+      logger.error('Error fetching donations', error, 'DonationService');
       throw error;
     }
   },
@@ -75,6 +108,7 @@ export const donationServices = {
    */
   create: async (data: any) => {
     try {
+      logger.debug('Creating donation', data, 'DonationService');
       let donationResult;
       
       // Main Firestore transaction
@@ -118,9 +152,10 @@ export const donationServices = {
         });
       }
 
+      logger.info('Donation created successfully', { id: donationResult.id }, 'DonationService');
       return donationResult;
     } catch (error) {
-      console.error('Error creating donation:', error);
+      logger.error('Error creating donation', error, 'DonationService');
       throw error;
     }
   },
@@ -148,6 +183,7 @@ export const donationServices = {
    */
   update: async (id: string, data: Partial<Donation>) => {
     try {
+      logger.debug('Updating donation', { id, ...data }, 'DonationService');
       if (data.amount !== undefined && data.amount <= 0) {
         throw new Error('Amount must be greater than 0');
       }
@@ -225,9 +261,10 @@ export const donationServices = {
         return { id, ...currentDonation, ...updatedData };
       });
 
+      logger.info('Donation updated successfully', { id }, 'DonationService');
       return result;
     } catch (error) {
-      console.error('Error updating donation:', error);
+      logger.error('Error updating donation', error, 'DonationService');
       throw error;
     }
   },
@@ -251,6 +288,7 @@ export const donationServices = {
    */
   delete: async (id: string) => {
     try {
+      logger.debug('Deleting donation', { id }, 'DonationService');
       await runTransaction(db, async (transaction) => {
         const donationRef = doc(db, COLLECTIONS.DONATIONS, id);
         const donationDoc = await transaction.get(donationRef);
@@ -292,8 +330,9 @@ export const donationServices = {
           reference: id
         });
       });
+      logger.info('Donation deleted successfully', { id }, 'DonationService');
     } catch (error) {
-      console.error('Error deleting donation:', error);
+      logger.error('Error deleting donation', error, 'DonationService');
       throw error;
     }
   }

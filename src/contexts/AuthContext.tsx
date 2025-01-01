@@ -7,59 +7,49 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User } from 'firebase/auth';
 import { authService } from '../services/firebase/authService';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { logger } from '../utils/logger';
 
-/**
- * @interface AuthContextType
- * @description Type definition for the authentication context
- */
+interface LocationState {
+  from: {
+    pathname: string;
+  };
+}
+
 interface AuthContextType {
-  /** Current authenticated user or null if not authenticated */
   user: User | null;
-  /** Loading state while checking authentication */
   loading: boolean;
-  /** Function to sign out the current user */
   signOut: () => Promise<void>;
 }
 
-/**
- * @constant
- * @description Context for managing authentication state
- * @default undefined
- */
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-/**
- * @component AuthProvider
- * @description Provider component that manages authentication state and navigation
- * Handles automatic navigation based on auth state and provides auth context to children
- * 
- * @param {Object} props - Component props
- * @param {React.ReactNode} props.children - Child components to be wrapped
- * @returns {JSX.Element} Provider component with authentication context
- */
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Set up authentication state listener
   useEffect(() => {
+    logger.debug('Setting up auth state listener', null, 'AuthProvider');
+    
     const unsubscribe = authService.onAuthStateChanged((user) => {
       setUser(user);
       setLoading(false);
       
       if (user) {
-        // If we're at login page and user is authenticated, redirect to dashboard
+        logger.info('User authenticated', { userId: user.uid }, 'AuthProvider');
+        
         if (location.pathname === '/login') {
-          // Get the redirect path from the location state or default to dashboard
-          const from = (location.state as any)?.from?.pathname || '/';
+          const state = location.state as LocationState;
+          const from = state?.from?.pathname || '/';
+          logger.debug('Redirecting after login', { from }, 'AuthProvider');
           navigate(from, { replace: true });
         }
       } else {
-        // If user is not authenticated and not at login page, redirect to login
+        logger.info('User not authenticated', null, 'AuthProvider');
+        
         if (location.pathname !== '/login') {
-          // Save the current location for redirect after login
+          logger.debug('Redirecting to login', { from: location.pathname }, 'AuthProvider');
           navigate('/login', { 
             replace: true,
             state: { from: location }
@@ -68,19 +58,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     });
 
-    return () => unsubscribe();
+    return () => {
+      logger.debug('Cleaning up auth state listener', null, 'AuthProvider');
+      unsubscribe();
+    };
   }, [navigate, location]);
 
-  /**
-   * Signs out the current user and redirects to login page
-   * @throws {Error} If sign out fails
-   */
   const signOut = async () => {
     try {
+      logger.info('User signing out', null, 'AuthProvider');
       await authService.signOut();
       navigate('/login', { replace: true });
     } catch (error) {
-      console.error('Error signing out:', error);
+      logger.error('Error signing out', error, 'AuthProvider');
     }
   };
 
@@ -97,15 +87,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-/**
- * @hook useAuth
- * @description Custom hook to access the authentication context
- * @throws {Error} If used outside of AuthProvider
- * @returns {AuthContextType} The authentication context value
- */
 export function useAuth() {
   const context = useContext(AuthContext);
   if (context === undefined) {
+    logger.error('useAuth must be used within an AuthProvider', null, 'useAuth');
     throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
