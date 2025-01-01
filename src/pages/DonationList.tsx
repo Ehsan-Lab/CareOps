@@ -1,14 +1,17 @@
 import React from 'react';
-import { Heart, Plus } from 'lucide-react';
+import { Heart, Plus, ChevronUp, ChevronDown } from 'lucide-react';
 import { useStore } from '../store';
 import { format } from 'date-fns';
 import { DonationModal } from '../components/modals/DonationModal';
 import { useFirebaseQuery } from '../hooks/useFirebaseQuery';
+import { Donation } from '../types';
 
 const DonationList: React.FC = () => {
   const { donations, donors, treasuryCategories } = useFirebaseQuery();
   const [isAddModalOpen, setIsAddModalOpen] = React.useState(false);
   const [deletingIds, setDeletingIds] = React.useState<string[]>([]);
+  const [selectedCategory, setSelectedCategory] = React.useState<string>('all');
+  const [sortDirection, setSortDirection] = React.useState<'asc' | 'desc'>('desc');
 
   const getDonorName = (donorId: string) => {
     const donor = donors?.find(d => d.id === donorId);
@@ -23,6 +26,30 @@ const DonationList: React.FC = () => {
   const handleDelete = (id: string) => {
     // Implement delete logic here
   };
+
+  const toggleSortDirection = () => {
+    setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+  };
+
+  const filteredAndSortedDonations = React.useMemo(() => {
+    if (!donations) return [];
+
+    let filtered = [...donations];
+    
+    // Apply category filter
+    if (selectedCategory !== 'all') {
+      filtered = filtered.filter(donation => donation.categoryId === selectedCategory);
+    }
+
+    // Sort by date
+    filtered.sort((a, b) => {
+      const dateA = new Date(a.date).getTime();
+      const dateB = new Date(b.date).getTime();
+      return sortDirection === 'asc' ? dateA - dateB : dateB - dateA;
+    });
+
+    return filtered;
+  }, [donations, selectedCategory, sortDirection]);
 
   return (
     <div>
@@ -48,6 +75,28 @@ const DonationList: React.FC = () => {
         </div>
       </div>
 
+      {/* Filter Controls */}
+      <div className="mt-4 flex gap-4 items-center">
+        <div className="flex items-center gap-2">
+          <label htmlFor="category-filter" className="text-sm font-medium text-gray-700">
+            Filter by Category:
+          </label>
+          <select
+            id="category-filter"
+            value={selectedCategory}
+            onChange={(e) => setSelectedCategory(e.target.value)}
+            className="rounded-md border-gray-300 py-1.5 text-gray-900 shadow-sm focus:border-rose-500 focus:ring-rose-500 sm:text-sm"
+          >
+            <option value="all">All Categories</option>
+            {treasuryCategories?.map((category) => (
+              <option key={category.id} value={category.id}>
+                {category.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
       <div className="mt-8 flow-root">
         <div className="-mx-4 -my-2 overflow-x-auto sm:-mx-6 lg:-mx-8">
           <div className="inline-block min-w-full py-2 align-middle sm:px-6 lg:px-8">
@@ -67,8 +116,18 @@ const DonationList: React.FC = () => {
                     <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                       Purpose
                     </th>
-                    <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
-                      Date
+                    <th 
+                      className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900 cursor-pointer hover:bg-gray-100"
+                      onClick={toggleSortDirection}
+                    >
+                      <div className="flex items-center gap-1">
+                        Date
+                        {sortDirection === 'asc' ? (
+                          <ChevronUp className="h-4 w-4" />
+                        ) : (
+                          <ChevronDown className="h-4 w-4" />
+                        )}
+                      </div>
                     </th>
                     <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
                       Actions
@@ -76,7 +135,7 @@ const DonationList: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 bg-white">
-                  {donations?.map((donation) => (
+                  {filteredAndSortedDonations.map((donation) => (
                     <tr key={donation.id}>
                       <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-6">
                         {getDonorName(donation.donorId)}

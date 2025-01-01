@@ -23,7 +23,7 @@ interface Transaction {
 }
 
 const TransactionsList: React.FC = () => {
-  const { data, isLoading, error } = useFirebaseQuery();
+  const { transactions, isLoading, error } = useFirebaseQuery();
   const [sortField, setSortField] = useState<'date' | 'amount' | 'type'>('date');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [filterType, setFilterType] = useState<'ALL' | 'CREDIT' | 'DEBIT' | 'STATUS_UPDATE'>('ALL');
@@ -32,18 +32,19 @@ const TransactionsList: React.FC = () => {
 
   // Validate and transform transactions data
   const validTransactions = React.useMemo(() => {
-    if (!data?.transactions || !Array.isArray(data.transactions)) {
+    if (!transactions?.transactions || !Array.isArray(transactions.transactions)) {
+      console.log('No valid transactions found:', transactions);
       return [];
     }
     
-    return data.transactions.filter(transaction => 
+    return transactions.transactions.filter(transaction => 
       transaction && 
       typeof transaction === 'object' &&
       transaction.type &&
       transaction.amount &&
       transaction.createdAt
     );
-  }, [data?.transactions]);
+  }, [transactions]);
 
   const sortedTransactions = React.useMemo(() => {
     if (!validTransactions.length) return [];
