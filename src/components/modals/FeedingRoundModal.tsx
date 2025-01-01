@@ -35,19 +35,28 @@ export const FeedingRoundModal: React.FC<FeedingRoundModalProps> = ({
   const [isSubmitting, setIsSubmitting] = React.useState(false);
   const { treasuryCategories, setFeedingRounds, feedingRounds } = useStore();
   
+  // Log available categories
+  console.log('Available treasury categories:', treasuryCategories);
+  
   // Look for a feeding category with more flexible matching
-  const feedingCategory = treasuryCategories.find(c => 
-    c.name.toLowerCase().includes('feed') || 
-    c.name.toLowerCase().includes('meal') || 
-    c.name.toLowerCase().includes('food')
-  );
+  const feedingCategory = treasuryCategories.find(c => {
+    const name = c.name.toLowerCase();
+    const isFeeding = name.includes('feed') || 
+                     name.includes('meal') || 
+                     name.includes('food');
+    console.log(`Category "${c.name}": ${isFeeding ? 'matches' : 'does not match'} feeding criteria`);
+    return isFeeding;
+  });
+
+  console.log('Selected feeding category:', feedingCategory);
 
   // Show warning if no feeding category is found
   React.useEffect(() => {
     if (!feedingCategory && treasuryCategories.length > 0) {
-      setSubmitError(
-        'No feeding category found in treasury. Please create a category with "feeding", "meal", or "food" in its name.'
-      );
+      const message = 'No feeding category found in treasury. Please create a category with "feeding", "meal", or "food" in its name. Available categories: ' + 
+        treasuryCategories.map(c => c.name).join(', ');
+      console.warn(message);
+      setSubmitError(message);
     } else {
       setSubmitError(null);
     }

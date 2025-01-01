@@ -46,7 +46,7 @@ export const TreasuryCategoryModal: React.FC<TreasuryCategoryModalProps> = ({
           balance: 0
         });
       }
-      queryClient.invalidateQueries({ queryKey: ['treasury'] });
+      queryClient.invalidateQueries({ queryKey: ['all-data'] });
       onClose();
     } catch (error) {
       console.error('Error saving category:', error);
@@ -64,20 +64,30 @@ export const TreasuryCategoryModal: React.FC<TreasuryCategoryModalProps> = ({
         <div className="relative w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-medium">
-              {category ? 'Edit' : 'Add'} Category
+              {category ? 'Edit' : 'New'} Treasury Category
             </h3>
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-500">
-              <X className="h-5 w-5" />
+            <button 
+              onClick={onClose} 
+              className="text-gray-400 hover:text-gray-500"
+              title="Close modal"
+            >
+              <X className="h-5 w-4" />
             </button>
           </div>
 
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700">Name</label>
+              <label className="block text-sm font-medium text-gray-700">
+                Name
+                <span className="text-xs text-gray-500 ml-1">
+                  (Use "Feeding" for feeding rounds)
+                </span>
+              </label>
               <input
                 type="text"
                 {...register('name', { required: 'Name is required' })}
                 className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 sm:text-sm"
+                placeholder="e.g., Feeding, Medical, Education"
               />
               {errors.name && (
                 <p className="mt-1 text-sm text-red-600">{errors.name.message}</p>
@@ -96,7 +106,7 @@ export const TreasuryCategoryModal: React.FC<TreasuryCategoryModalProps> = ({
                 type="submit"
                 className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
               >
-                {category ? 'Update' : 'Add'} Category
+                {category ? 'Update' : 'Create'} Category
               </button>
             </div>
           </form>
