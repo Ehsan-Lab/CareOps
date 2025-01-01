@@ -50,21 +50,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
       
       if (user) {
-        // If we're at login page and user is authenticated, redirect to payment-requests
+        // If we're at login page and user is authenticated, redirect to dashboard
         if (location.pathname === '/login') {
-          navigate('/payment-requests', { replace: true });
+          // Get the redirect path from the location state or default to dashboard
+          const from = (location.state as any)?.from?.pathname || '/';
+          navigate(from, { replace: true });
         }
       } else {
         // If user is not authenticated and not at login page, redirect to login
         if (location.pathname !== '/login') {
-          navigate('/login', { replace: true });
+          // Save the current location for redirect after login
+          navigate('/login', { 
+            replace: true,
+            state: { from: location }
+          });
         }
       }
     });
 
-    // Cleanup subscription on unmount
     return () => unsubscribe();
-  }, [navigate, location.pathname]);
+  }, [navigate, location]);
 
   /**
    * Signs out the current user and redirects to login page
@@ -73,11 +78,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = async () => {
     try {
       await authService.signOut();
-      setUser(null);
       navigate('/login', { replace: true });
     } catch (error) {
-      console.error('Sign out error:', error);
-      throw error;
+      console.error('Error signing out:', error);
     }
   };
 
