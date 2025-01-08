@@ -6,60 +6,71 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function isAdmin() {
-      return isSignedIn() && request.auth.token.admin == true;
-    }
-
-    function isValidAmount() {
-      return request.resource.data.amount is number && request.resource.data.amount > 0;
-    }
-
     function hasValidTimestamps() {
       let hasCreatedAt = request.resource.data.createdAt is timestamp;
       let hasUpdatedAt = request.resource.data.updatedAt is timestamp;
       return hasCreatedAt && hasUpdatedAt;
     }
 
-    // Common rules
+    function isValidFeedingRound() {
+      let data = request.resource.data;
+      return data.allocatedAmount is number 
+        && data.allocatedAmount > 0 
+        && data.unitPrice is number 
+        && data.unitPrice > 0
+        && data.categoryId is string
+        && data.date is string
+        && (data.status == 'PENDING' || data.status == 'IN_PROGRESS' || data.status == 'COMPLETED' || data.status == 'CANCELLED')
+        && (!data.keys().hasAny(['photos']) || data.photos is list);
+    }
+
+    function isValidTreasuryCategory() {
+      let data = request.resource.data;
+      return data.name is string
+        && data.name.size() > 0
+        && data.balance is number
+        && data.balance >= 0;
+    }
+
+    function isValidTransaction() {
+      let data = request.resource.data;
+      return data.type in ['DEBIT', 'CREDIT', 'STATUS_UPDATE']
+        && data.amount is number
+        && data.amount > 0
+        && data.description is string
+        && data.category is string
+        && data.reference is string
+        && data.status in ['PENDING', 'COMPLETED', 'CANCELLED'];
+    }
+
+    // Common rules - all operations require authentication
     match /{document=**} {
       allow read: if isSignedIn();
-      allow write: if isAdmin();
+      allow write: if isSignedIn();
     }
 
-    // Specific collection rules
-    match /donors/{donorId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin();
-    }
-
-    match /donations/{donationId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin() && isValidAmount() && hasValidTimestamps();
-    }
-
-    match /beneficiaries/{beneficiaryId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin() && hasValidTimestamps();
-    }
-
-    match /payments/{paymentId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin() && isValidAmount() && hasValidTimestamps();
-    }
-
+    // Feeding rounds collection
     match /feedingRounds/{roundId} {
       allow read: if isSignedIn();
-      allow write: if isAdmin() && isValidAmount() && hasValidTimestamps();
+      allow create: if isSignedIn() && isValidFeedingRound() && hasValidTimestamps();
+      allow update: if isSignedIn() && isValidFeedingRound() && hasValidTimestamps();
+      allow delete: if isSignedIn();
     }
 
+    // Treasury collection
     match /treasury/{categoryId} {
       allow read: if isSignedIn();
-      allow write: if isAdmin() && isValidAmount() && hasValidTimestamps();
+      allow create: if isSignedIn() && isValidTreasuryCategory() && hasValidTimestamps();
+      allow update: if isSignedIn() && isValidTreasuryCategory() && hasValidTimestamps();
+      allow delete: if isSignedIn();
     }
 
+    // Transactions collection
     match /transactions/{transactionId} {
       allow read: if isSignedIn();
-      allow write: if isAdmin() && isValidAmount() && hasValidTimestamps();
+      allow create: if isSignedIn() && isValidTransaction() && hasValidTimestamps();
+      allow update: if false;  // Transactions should never be updated
+      allow delete: if false;  // Transactions should never be deleted
     }
   }
 }
