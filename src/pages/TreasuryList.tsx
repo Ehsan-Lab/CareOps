@@ -1,16 +1,18 @@
 import React from 'react';
-import { Wallet, Plus, TrendingUp, TrendingDown } from 'lucide-react';
+import { Wallet, Plus, TrendingUp, TrendingDown, CheckCircle } from 'lucide-react';
 import { TreasuryCategoryModal } from '../components/modals/TreasuryCategoryModal';
 import { treasuryServices } from '../services/firebase/treasuryService';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAllData } from '../hooks/useFirebaseQuery';
 import { TreasuryCategory } from '../types';
+import { TreasuryValidation, useTreasuryValidation } from '../components/TreasuryValidation';
 
 const TreasuryList: React.FC = () => {
   const { data, isLoading } = useAllData();
   const categories = (data?.treasury || []) as TreasuryCategory[];
   const [isAddModalOpen, setIsAddModalOpen] = React.useState(false);
   const queryClient = useQueryClient();
+  const { runValidation, isValidating, validationResults } = useTreasuryValidation();
 
   const handleAdjustBalance = async (id: string) => {
     const adjustmentAmount = parseFloat(
@@ -62,7 +64,16 @@ const TreasuryList: React.FC = () => {
             Monitor and manage fund categories and balances
           </p>
         </div>
-        <div className="mt-4 sm:ml-16 sm:mt-0 sm:flex-none">
+        <div className="mt-4 sm:ml-16 sm:mt-0 sm:flex-none flex gap-2">
+          <button
+            type="button"
+            onClick={runValidation}
+            disabled={isValidating}
+            className="flex items-center gap-1 rounded-md bg-green-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-600 disabled:opacity-50"
+          >
+            <CheckCircle className="h-4 w-4" />
+            {isValidating ? 'Validating...' : 'Test Validation'}
+          </button>
           <button
             type="button"
             onClick={() => setIsAddModalOpen(true)}
@@ -73,6 +84,11 @@ const TreasuryList: React.FC = () => {
           </button>
         </div>
       </div>
+
+      <TreasuryValidation 
+        isVisible={!!validationResults} 
+        validationResults={validationResults} 
+      />
 
       {/* Summary Cards */}
       <div className="mt-8 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">

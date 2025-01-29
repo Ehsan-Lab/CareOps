@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Utensils, Plus, Play, CheckCircle, Pencil, Trash2, Camera, ImageOff, ChevronDown, ChevronUp } from 'lucide-react';
+import { Utensils, Plus, Play, CheckCircle, Pencil, Trash2, Camera, ImageOff, ChevronDown, ChevronUp, X } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAllData } from '../hooks/useFirebaseQuery';
 import { FeedingRoundModal } from '../components/modals/FeedingRoundModal';
@@ -9,6 +9,7 @@ import { format } from 'date-fns';
 import { FeedingRound, Donor, Beneficiary, Donation, Payment, TreasuryCategory, Transaction } from '../types';
 import { DocumentSnapshot, DocumentData } from 'firebase/firestore';
 import { logger } from '../utils/logger';
+import { Timestamp } from 'firebase/firestore';
 
 interface PaginatedFeedingRounds {
   rounds: FeedingRound[];
@@ -86,7 +87,7 @@ const FeedingRoundList: React.FC = () => {
         return false;
       }
 
-      if (!['PENDING', 'COMPLETED', 'CANCELLED'].includes(round.status)) {
+      if (!['PENDING', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'].includes(round.status)) {
         logger.warn('Invalid status', { round }, 'FeedingRoundList');
         return false;
       }
@@ -191,27 +192,126 @@ const FeedingRoundList: React.FC = () => {
     try {
       logger.debug('Updating round status', { id, newStatus }, 'FeedingRoundList');
       setUpdatingStatus(id);
-      // Optimistic update
-      const updatedRounds = validFeedingRounds.map(round => 
-        round.id === id ? { ...round, status: newStatus } : round
-      );
-      queryClient.setQueryData<AllData>(['all-data'], (oldData) => ({
-        ...oldData!,
-        feedingRounds: { rounds: updatedRounds, lastDoc }
-      }));
-
-      await feedingRoundServices.updateStatus(id, newStatus);
       
-      // Invalidate and refetch all relevant queries
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['all-data'] }),
-        queryClient.refetchQueries({ queryKey: ['all-data'] })
-      ]);
+      // Find the current round
+      const currentRound = validFeedingRounds.find(round => round.id === id);
+      if (!currentRound) {
+        throw new Error('Round not found');
+      }
+
+      // For cancellation, ask for confirmation
+      if (newStatus === 'CANCELLED') {
+        const message = currentRound.status === 'IN_PROGRESS' 
+          ? 'This will refund the allocated amount back to the treasury. Are you sure you want to cancel this round?'
+          : 'Are you sure you want to cancel this round?';
+        
+        if (!window.confirm(message)) {
+          return;
+        }
+      }
+
+      // Validate status transitions
+      if (currentRound.status === 'COMPLETED') {
+        throw new Error('Cannot update a completed round');
+      }
+
+      if (newStatus === 'IN_PROGRESS' && currentRound.status !== 'PENDING') {
+        throw new Error('Can only start a pending round');
+      }
+
+      if (newStatus === 'COMPLETED' && currentRound.status !== 'IN_PROGRESS') {
+        throw new Error('Can only complete an in-progress round');
+      }
+
+      if (newStatus === 'CANCELLED' && !['PENDING', 'IN_PROGRESS'].includes(currentRound.status)) {
+        throw new Error('Can only cancel pending or in-progress rounds');
+      }
+
+      // Save the old data for rollback
+      const oldData = queryClient.getQueryData<AllData>(['all-data']);
+
+      // Create optimistically updated round
+      const optimisticRound = {
+        ...currentRound,
+        status: newStatus,
+        updatedAt: Timestamp.now()
+      };
+
+      // Optimistic update
+      queryClient.setQueryData<AllData>(['all-data'], (oldData) => {
+        if (!oldData) return oldData;
+
+        const updatedRounds = oldData.feedingRounds.rounds.map(round => 
+          round.id === id ? optimisticRound : round
+        );
+
+        logger.debug('Optimistic update', { 
+          oldCount: oldData.feedingRounds.rounds.length,
+          newCount: updatedRounds.length,
+          updatedRound: optimisticRound
+        }, 'FeedingRoundList');
+
+        return {
+          ...oldData,
+          feedingRounds: {
+            rounds: updatedRounds,
+            lastDoc: oldData.feedingRounds.lastDoc
+          }
+        };
+      });
+
+      try {
+        // Perform the actual update
+        const updatedRound = await feedingRoundServices.updateStatus(
+          id, 
+          newStatus as 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED'
+        );
+        
+        // Update with actual server data
+        queryClient.setQueryData<AllData>(['all-data'], (oldData) => {
+          if (!oldData) return oldData;
+
+          const updatedRounds = oldData.feedingRounds.rounds.map(round => 
+            round.id === id ? updatedRound : round
+          );
+
+          logger.debug('Server update', { 
+            oldCount: oldData.feedingRounds.rounds.length,
+            newCount: updatedRounds.length,
+            updatedRound
+          }, 'FeedingRoundList');
+
+          return {
+            ...oldData,
+            feedingRounds: {
+              rounds: updatedRounds,
+              lastDoc: oldData.feedingRounds.lastDoc
+            }
+          };
+        });
+
+        // Only refetch treasury data if needed, without invalidating feeding rounds
+        if ((newStatus === 'IN_PROGRESS' && currentRound.status === 'PENDING') || 
+            (newStatus === 'CANCELLED' && currentRound.status === 'IN_PROGRESS')) {
+          // Fetch updated treasury data in the background
+          queryClient.refetchQueries({ 
+            queryKey: ['all-data'],
+            exact: false,
+            stale: true,
+            // Don't remove existing data while refetching
+            refetchPage: (_, index) => index === 0
+          });
+        }
+      } catch (error) {
+        // Revert to old data on error
+        if (oldData) {
+          queryClient.setQueryData(['all-data'], oldData);
+        }
+        throw error;
+      }
     } catch (error) {
       logger.error('Error updating status', error, 'FeedingRoundList');
-      // Revert optimistic update
-      queryClient.invalidateQueries({ queryKey: ['all-data'] });
-      alert('Failed to update status');
+      alert(error instanceof Error ? error.message : 'Failed to update status');
     } finally {
       setUpdatingStatus(null);
     }
@@ -272,6 +372,8 @@ const FeedingRoundList: React.FC = () => {
         return 'bg-blue-100 text-blue-800';
       case 'COMPLETED':
         return 'bg-green-100 text-green-800';
+      case 'CANCELLED':
+        return 'bg-red-100 text-red-800';
       default:
         return 'bg-gray-100 text-gray-800';
     }
@@ -429,7 +531,7 @@ const FeedingRoundList: React.FC = () => {
                                   )}
                                 </button>
                               )}
-                              {round.status !== 'COMPLETED' && (
+                              {['PENDING', 'IN_PROGRESS'].includes(round.status) && (
                                 <>
                                   <button
                                     className="text-emerald-600 hover:text-emerald-900"
@@ -450,6 +552,18 @@ const FeedingRoundList: React.FC = () => {
                                       <Trash2 className="h-4 w-4" />
                                     )}
                                   </button>
+                                  <button
+                                    className="text-orange-600 hover:text-orange-900 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    onClick={() => handleStatusUpdate(round.id, 'CANCELLED')}
+                                    disabled={updatingStatus === round.id}
+                                    title="Cancel Round"
+                                  >
+                                    {updatingStatus === round.id ? (
+                                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-orange-600" />
+                                    ) : (
+                                      <X className="h-4 w-4" />
+                                    )}
+                                  </button>
                                 </>
                               )}
                               {round.status === 'COMPLETED' && (
@@ -464,6 +578,11 @@ const FeedingRoundList: React.FC = () => {
                                     <ImageOff className="h-4 w-4" />
                                   )}
                                 </button>
+                              )}
+                              {round.status === 'CANCELLED' && (
+                                <span className="text-gray-400 text-sm italic">
+                                  Cancelled
+                                </span>
                               )}
                             </div>
                           </td>

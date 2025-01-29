@@ -102,7 +102,8 @@ export const feedingRoundServices = {
       );
       console.log('FeedingRoundService: Initial query created');
 
-      if (status) {
+      // Only apply status filter if specifically requested
+      if (status && status !== 'ALL') {
         q = query(q, where('status', '==', status));
         console.log('FeedingRoundService: Added status filter:', status);
       }
@@ -171,63 +172,22 @@ export const feedingRoundServices = {
   },
 
   /**
-   * Creates a new feeding round and allocates funds from treasury
+   * Creates a new feeding round without affecting treasury
    * @async
    * @param {Omit<FeedingRound, 'id'>} data - Feeding round data without ID
-   * @throws {Error} If:
-   *  - Feeding category not found
-   *  - Insufficient funds in category
-   *  - Transaction fails
-   * 
-   * @description
-   * This operation performs the following steps atomically:
-   * 1. Verifies the feeding category exists
-   * 2. Checks sufficient funds are available
-   * 3. Creates the feeding round record
-   * 4. Deducts allocated amount from treasury category
    */
-  create: async (data: Omit<FeedingRound, 'id'>) => {
+  create: async (data: Omit<FeedingRound, 'id'>): Promise<FeedingRound> => {
     return retryOperation(async () => {
       try {
         const result = await runTransaction(db, async (transaction) => {
-          const categoryRef = doc(db, COLLECTIONS.TREASURY, data.categoryId);
-          const categoryDoc = await transaction.get(categoryRef);
-          
-          if (!categoryDoc.exists()) {
-            throw new Error('Feeding category not found');
-          }
-
-          const currentBalance = categoryDoc.data().balance || 0;
-          if (currentBalance < data.allocatedAmount) {
-            throw new Error('Insufficient funds in feeding category');
-          }
-
           const roundRef = doc(collection(db, COLLECTIONS.FEEDING_ROUNDS));
           const roundData = {
             ...data,
+            status: 'PENDING',
             createdAt: Timestamp.now(),
             updatedAt: Timestamp.now()
           };
           transaction.set(roundRef, roundData);
-
-          transaction.update(categoryRef, {
-            balance: currentBalance - data.allocatedAmount,
-            updatedAt: Timestamp.now()
-          });
-
-          // Record the transaction inside the Firestore transaction
-          const transactionRef = doc(collection(db, COLLECTIONS.TRANSACTIONS));
-          const transactionData = {
-            type: 'DEBIT',
-            amount: data.allocatedAmount,
-            description: `Feeding round allocation for ${format(new Date(data.date), 'MMM d, yyyy')}`,
-            category: 'FEEDING_ROUND',
-            reference: roundRef.id,
-            status: 'COMPLETED',
-            createdAt: Timestamp.now(),
-            updatedAt: Timestamp.now()
-          };
-          transaction.set(transactionRef, transactionData);
 
           return { id: roundRef.id, ...roundData };
         });
@@ -275,38 +235,13 @@ export const feedingRoundServices = {
    * @throws {Error} If updating the round fails
    * 
    * @description
-   * Updates the feeding round details while maintaining the allocated amount.
-   * For changes to allocated amount, the round should be deleted and recreated.
+   * Only allows updating non-sensitive fields and adding drive link to completed rounds
    */
-  update: async (id: string, data: Partial<FeedingRound>) => {
+  update: async (id: string, data: Partial<FeedingRound>): Promise<FeedingRound> => {
     return retryOperation(async () => {
       try {
-        const docRef = doc(db, COLLECTIONS.FEEDING_ROUNDS, id);
-        await updateDoc(docRef, {
-          ...data,
-          updatedAt: Timestamp.now()
-        });
-      } catch (error) {
-        console.error('Error updating feeding round:', error);
-        throw new Error(`Failed to update feeding round: ${error.message}`);
-      }
-    });
-  },
-
-  /**
-   * Updates the status of a feeding round
-   * @async
-   * @param {string} id - Feeding round ID
-   * @param {'PENDING' | 'IN_PROGRESS' | 'COMPLETED'} status - New status
-   * @throws {Error} If updating the status fails
-   * 
-   * @description
-   * Updates the feeding round status to track its progress.
-   * Status transitions: PENDING → IN_PROGRESS → COMPLETED
-   */
-  updateStatus: async (id: string, status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED') => {
-    return retryOperation(async () => {
-      try {
+        let updatedRound: FeedingRound;
+        
         await runTransaction(db, async (transaction) => {
           const roundRef = doc(db, COLLECTIONS.FEEDING_ROUNDS, id);
           const roundDoc = await transaction.get(roundRef);
@@ -315,15 +250,167 @@ export const feedingRoundServices = {
             throw new Error('Feeding round not found');
           }
 
-          const roundData = roundDoc.data();
-          transaction.update(roundRef, {
+          const currentRound = roundDoc.data() as FeedingRound;
+
+          // For completed rounds, only allow updating driveLink
+          if (currentRound.status === 'COMPLETED') {
+            if (Object.keys(data).some(key => key !== 'driveLink')) {
+              throw new Error('Can only update drive link for completed rounds');
+            }
+          }
+
+          // Don't allow updating sensitive fields
+          const safeData = { ...data };
+          delete safeData.allocatedAmount;  // Can't change allocated amount
+          delete safeData.categoryId;       // Can't change category
+          delete safeData.status;           // Status must be changed through updateStatus
+
+          const updateData = {
+            ...safeData,
+            updatedAt: Timestamp.now()
+          };
+
+          transaction.update(roundRef, updateData);
+
+          // Set the complete updated round data
+          updatedRound = {
+            ...currentRound,
+            ...updateData,
+            id,
+            createdAt: currentRound.createdAt || Timestamp.now(),
+            status: currentRound.status || 'PENDING',
+            allocatedAmount: currentRound.allocatedAmount || 0,
+            categoryId: currentRound.categoryId || '',
+            photos: currentRound.photos || []
+          };
+        });
+
+        return updatedRound!;
+      } catch (error) {
+        console.error('Error updating feeding round:', error);
+        throw new Error(`Failed to update feeding round: ${error.message}`);
+      }
+    });
+  },
+
+  /**
+   * Updates the status of a feeding round and handles treasury operations
+   * @async
+   * @param {string} id - Feeding round ID
+   * @param {'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED'} status - New status
+   * @throws {Error} If updating the status fails
+   * 
+   * @description
+   * Status transitions and treasury operations:
+   * - PENDING → IN_PROGRESS: Deduct amount from treasury
+   * - IN_PROGRESS → COMPLETED: No treasury operation
+   * - IN_PROGRESS → CANCELLED: Refund amount to treasury
+   * - COMPLETED: Only allow adding drive link
+   */
+  updateStatus: async (id: string, status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED'): Promise<FeedingRound> => {
+    return retryOperation(async () => {
+      try {
+        let updatedRound: FeedingRound;
+        
+        await runTransaction(db, async (transaction) => {
+          const roundRef = doc(db, COLLECTIONS.FEEDING_ROUNDS, id);
+          const roundDoc = await transaction.get(roundRef);
+          
+          if (!roundDoc.exists()) {
+            throw new Error('Feeding round not found');
+          }
+
+          const roundData = roundDoc.data() as FeedingRound;
+          
+          // Validate status transitions
+          if (roundData.status === 'COMPLETED') {
+            throw new Error('Cannot update a completed round');
+          }
+
+          if (status === 'IN_PROGRESS' && roundData.status !== 'PENDING') {
+            throw new Error('Can only start a pending round');
+          }
+
+          if (status === 'COMPLETED' && roundData.status !== 'IN_PROGRESS') {
+            throw new Error('Can only complete an in-progress round');
+          }
+
+          if (status === 'CANCELLED' && !['PENDING', 'IN_PROGRESS'].includes(roundData.status)) {
+            throw new Error('Can only cancel pending or in-progress rounds');
+          }
+
+          // Handle treasury operations based on status transition
+          if (status === 'IN_PROGRESS' && roundData.status === 'PENDING') {
+            // Starting a round - deduct from treasury
+            const categoryRef = doc(db, COLLECTIONS.TREASURY, roundData.categoryId);
+            const categoryDoc = await transaction.get(categoryRef);
+            
+            if (!categoryDoc.exists()) {
+              throw new Error('Treasury category not found');
+            }
+
+            const currentBalance = categoryDoc.data().balance || 0;
+            if (currentBalance < roundData.allocatedAmount) {
+              throw new Error('Insufficient funds in treasury category');
+            }
+
+            transaction.update(categoryRef, {
+              balance: currentBalance - roundData.allocatedAmount,
+              updatedAt: Timestamp.now()
+            });
+
+            // Record debit transaction
+            const debitTransactionRef = doc(collection(db, COLLECTIONS.TRANSACTIONS));
+            transaction.set(debitTransactionRef, {
+              type: 'DEBIT',
+              amount: roundData.allocatedAmount,
+              description: `Feeding round started for ${format(new Date(roundData.date), 'MMM d, yyyy')}`,
+              category: 'FEEDING_ROUND_START',
+              reference: id,
+              status: 'COMPLETED',
+              createdAt: Timestamp.now(),
+              updatedAt: Timestamp.now()
+            });
+          } else if (status === 'CANCELLED' && roundData.status === 'IN_PROGRESS') {
+            // Cancelling an in-progress round - refund to treasury
+            const categoryRef = doc(db, COLLECTIONS.TREASURY, roundData.categoryId);
+            const categoryDoc = await transaction.get(categoryRef);
+            
+            if (!categoryDoc.exists()) {
+              throw new Error('Treasury category not found');
+            }
+
+            const currentBalance = categoryDoc.data().balance || 0;
+            transaction.update(categoryRef, {
+              balance: currentBalance + roundData.allocatedAmount,
+              updatedAt: Timestamp.now()
+            });
+
+            // Record credit transaction
+            const creditTransactionRef = doc(collection(db, COLLECTIONS.TRANSACTIONS));
+            transaction.set(creditTransactionRef, {
+              type: 'CREDIT',
+              amount: roundData.allocatedAmount,
+              description: `Feeding round cancelled for ${format(new Date(roundData.date), 'MMM d, yyyy')}`,
+              category: 'FEEDING_ROUND_CANCEL',
+              reference: id,
+              status: 'COMPLETED',
+              createdAt: Timestamp.now(),
+              updatedAt: Timestamp.now()
+            });
+          }
+
+          const updateData = {
             status,
             updatedAt: Timestamp.now()
-          });
+          };
+          
+          transaction.update(roundRef, updateData);
+          updatedRound = { ...roundData, ...updateData, id };
 
-          // Record status change transaction inside the Firestore transaction
-          const transactionRef = doc(collection(db, COLLECTIONS.TRANSACTIONS));
-          const transactionData = {
+          // Record status change transaction
+          const statusTransactionRef = doc(collection(db, COLLECTIONS.TRANSACTIONS));
+          transaction.set(statusTransactionRef, {
             type: 'STATUS_UPDATE',
             amount: roundData.allocatedAmount,
             description: `Feeding round status updated to ${status} for ${format(new Date(roundData.date), 'MMM d, yyyy')}`,
@@ -332,9 +419,10 @@ export const feedingRoundServices = {
             status: 'COMPLETED',
             createdAt: Timestamp.now(),
             updatedAt: Timestamp.now()
-          };
-          transaction.set(transactionRef, transactionData);
+          });
         });
+
+        return updatedRound!;
       } catch (error) {
         console.error('Error updating feeding round status:', error);
         throw new Error(`Failed to update feeding round status: ${error.message}`);
@@ -343,20 +431,13 @@ export const feedingRoundServices = {
   },
 
   /**
-   * Deletes a feeding round and refunds allocated amount to treasury
+   * Deletes a feeding round
    * @async
    * @param {string} id - Feeding round ID
    * @throws {Error} If:
    *  - Feeding round not found
-   *  - Feeding category not found
+   *  - Round is completed
    *  - Transaction fails
-   * 
-   * @description
-   * This operation performs the following steps atomically:
-   * 1. Retrieves and validates the feeding round
-   * 2. Verifies the treasury category exists
-   * 3. Deletes the feeding round record
-   * 4. Refunds the allocated amount to treasury category
    */
   delete: async (id: string) => {
     return retryOperation(async () => {
@@ -372,40 +453,47 @@ export const feedingRoundServices = {
           }
 
           deletedRoundData = roundDoc.data();
-          const categoryRef = doc(db, COLLECTIONS.TREASURY, deletedRoundData.categoryId);
-          const categoryDoc = await transaction.get(categoryRef);
-          
-          if (!categoryDoc.exists()) {
-            throw new Error('Feeding category not found');
+
+          if (deletedRoundData.status === 'COMPLETED') {
+            throw new Error('Cannot delete a completed round');
           }
 
-          const currentBalance = categoryDoc.data().balance || 0;
+          // If the round was in progress, refund the treasury
+          if (deletedRoundData.status === 'IN_PROGRESS') {
+            const categoryRef = doc(db, COLLECTIONS.TREASURY, deletedRoundData.categoryId);
+            const categoryDoc = await transaction.get(categoryRef);
+            
+            if (!categoryDoc.exists()) {
+              throw new Error('Treasury category not found');
+            }
 
-          // Record the refund transaction first
-          const transactionRef = doc(collection(db, COLLECTIONS.TRANSACTIONS));
-          const now = Timestamp.now();
-          const transactionData = {
-            type: 'CREDIT',
-            amount: deletedRoundData.allocatedAmount,
-            description: `Refund from deleted feeding round for ${format(new Date(deletedRoundData.date), 'MMM d, yyyy')}`,
-            category: 'FEEDING_ROUND_DELETE',
-            reference: id,
-            status: 'COMPLETED',
-            createdAt: now,
-            updatedAt: now
-          };
-          transaction.set(transactionRef, transactionData);
+            const currentBalance = categoryDoc.data().balance || 0;
 
-          // Then update treasury and delete the round
-          transaction.update(categoryRef, {
-            balance: currentBalance + deletedRoundData.allocatedAmount,
-            updatedAt: now
-          });
+            // Record the refund transaction
+            const transactionRef = doc(collection(db, COLLECTIONS.TRANSACTIONS));
+            const now = Timestamp.now();
+            transaction.set(transactionRef, {
+              type: 'CREDIT',
+              amount: deletedRoundData.allocatedAmount,
+              description: `Refund from deleted feeding round for ${format(new Date(deletedRoundData.date), 'MMM d, yyyy')}`,
+              category: 'FEEDING_ROUND_DELETE',
+              reference: id,
+              status: 'COMPLETED',
+              createdAt: now,
+              updatedAt: now
+            });
+
+            // Update treasury balance
+            transaction.update(categoryRef, {
+              balance: currentBalance + deletedRoundData.allocatedAmount,
+              updatedAt: now
+            });
+          }
+
           transaction.delete(roundRef);
         });
 
-        // Log successful deletion and transaction recording
-        console.log(`Successfully deleted feeding round ${id} and recorded refund transaction`);
+        console.log(`Successfully deleted feeding round ${id}`);
         return deletedRoundData;
       } catch (error) {
         console.error('Error deleting feeding round:', error);

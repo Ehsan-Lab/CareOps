@@ -3,6 +3,7 @@ import { Link, Outlet, useLocation, NavLink } from 'react-router-dom';
 import { Heart, Users, Wallet, Utensils, Menu, CircleDollarSign, UserRound, CreditCard, FileText, LogOut, LayoutDashboard, DollarSign, Gift, UserCheck } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { DebugModeToggle } from './DebugModeToggle';
+import { DataSynchronizer } from './DataSynchronizer';
 
 const Layout: React.FC = () => {
   const location = useLocation();
@@ -24,6 +25,9 @@ const Layout: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Data Synchronizer */}
+      <DataSynchronizer />
+
       {/* Mobile menu button */}
       <div className="lg:hidden fixed top-0 left-0 right-0 z-50 bg-white shadow-sm p-4">
         <button

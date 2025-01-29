@@ -32,6 +32,7 @@ export const treasuryServices = {
     try {
       await addDoc(collection(db, COLLECTIONS.TREASURY), {
         ...data,
+        treasuryId: 'default',
         createdAt: Timestamp.now(),
         updatedAt: Timestamp.now()
       });
