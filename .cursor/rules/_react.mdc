@@ -1,0 +1,71 @@
+# React-Specific Rules
+
+## Component Structure
+- Use functional components
+- Keep components focused and small
+- Extract reusable logic into custom hooks
+- Implement proper prop types
+- Use proper component composition
+
+## Hooks Usage
+- Follow hooks rules
+- Use appropriate hooks for state management
+- Implement custom hooks for complex logic
+- Optimize hook dependencies
+- Handle cleanup in useEffect
+
+## State Management
+- Use local state appropriately
+- Implement proper context usage
+- Avoid prop drilling
+- Use reducers for complex state
+- Implement proper state updates
+
+## Performance
+- Use React.memo wisely
+- Implement proper key usage
+- Avoid unnecessary re-renders
+- Use lazy loading
+- Implement proper code splitting
+
+## Component Lifecycle
+- Handle mounting/unmounting properly
+- Implement proper error boundaries
+- Use Suspense for loading states
+- Handle side effects properly
+- Clean up subscriptions
+
+## Props
+- Use proper prop naming
+- Implement defaultProps
+- Use proper prop types
+- Avoid unnecessary props
+- Document required props
+
+## Event Handling
+- Use proper event handlers
+- Implement proper event delegation
+- Handle synthetic events properly
+- Use proper event naming
+- Clean up event listeners
+
+## Forms
+- Use controlled components
+- Implement proper form validation
+- Handle form submission properly
+- Use proper form state management
+- Implement proper error handling
+
+## Accessibility
+- Use proper ARIA attributes
+- Implement keyboard navigation
+- Use semantic HTML
+- Handle focus management
+- Test with screen readers
+
+## Testing
+- Write component tests
+- Test user interactions
+- Mock external dependencies
+- Test error states
+- Use proper testing utilities 

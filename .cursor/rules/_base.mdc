@@ -1,0 +1,50 @@
+# Base Rules for All Files
+
+## File Organization
+- Keep files focused and single-responsibility
+- Use meaningful file names that reflect their purpose
+- Group related files in appropriate directories
+- Maximum file length: 400 lines (soft limit)
+
+## Code Style
+- Use consistent indentation (2 spaces)
+- Keep lines under 100 characters
+- Use meaningful variable and function names
+- Add comments for complex logic
+- Remove unused code and imports
+
+## Error Handling
+- Use try-catch blocks appropriately
+- Log errors with meaningful messages
+- Handle edge cases explicitly
+- Validate input data
+
+## Performance
+- Avoid unnecessary computations
+- Use appropriate data structures
+- Implement caching when beneficial
+- Consider memory usage
+
+## Security
+- Validate user input
+- Sanitize data before processing
+- Use proper authentication
+- Follow security best practices
+
+## Documentation
+- Add JSDoc comments for functions
+- Document complex algorithms
+- Keep README files up to date
+- Include usage examples
+
+## Version Control
+- Write meaningful commit messages
+- Keep commits focused and atomic
+- Follow conventional commits
+- Reference issues in commits
+
+## Testing
+- Write unit tests for new features
+- Maintain test coverage
+- Test edge cases
+- Mock external dependencies 

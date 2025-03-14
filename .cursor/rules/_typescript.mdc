@@ -1,0 +1,50 @@
+# TypeScript-Specific Rules
+
+## Type Definitions
+- Use explicit type annotations for function parameters
+- Avoid using 'any' type
+- Create interfaces for complex objects
+- Use union types instead of enums
+- Leverage type inference when appropriate
+
+## Type Safety
+- Enable strict TypeScript checks
+- Use null checks
+- Implement proper error types
+- Use type guards when necessary
+- Avoid type assertions unless absolutely needed
+
+## Best Practices
+- Use readonly where applicable
+- Implement proper generics
+- Use discriminated unions
+- Leverage utility types
+- Use const assertions
+
+## Naming Conventions
+- PascalCase for types/interfaces
+- camelCase for variables/functions
+- Use 'I' prefix for interfaces
+- Use 'T' prefix for type parameters
+- Use 'E' prefix for enums
+
+## Module Organization
+- Use barrel exports
+- Organize imports
+- Separate types into .d.ts files
+- Use path aliases
+- Keep type definitions close to usage
+
+## Common Patterns
+- Use Optional Chaining
+- Use Nullish Coalescing
+- Implement proper async/await
+- Use template literal types
+- Leverage mapped types
+
+## Type Documentation
+- Document complex types
+- Add examples in comments
+- Use TSDoc format
+- Include type constraints
+- Document type parameters 

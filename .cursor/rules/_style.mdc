@@ -1,0 +1,71 @@
+# Styling Rules
+
+## CSS Organization
+- Use CSS modules or styled-components
+- Follow BEM naming convention
+- Keep styles modular
+- Use proper CSS cascade
+- Implement proper specificity
+
+## Responsive Design
+- Use mobile-first approach
+- Implement proper breakpoints
+- Use relative units
+- Test across devices
+- Handle orientation changes
+
+## Layout
+- Use proper layout systems
+- Implement proper grid
+- Use flexbox appropriately
+- Handle overflow properly
+- Maintain proper spacing
+
+## Typography
+- Use proper font scale
+- Implement proper line heights
+- Use proper font weights
+- Maintain readability
+- Handle font loading
+
+## Colors
+- Use proper color system
+- Implement proper contrast
+- Use semantic colors
+- Handle dark mode
+- Use proper color variables
+
+## Animations
+- Use proper transitions
+- Implement smooth animations
+- Handle reduced motion
+- Use proper timing
+- Optimize performance
+
+## Accessibility
+- Use proper color contrast
+- Implement focus styles
+- Handle text scaling
+- Use proper landmarks
+- Support high contrast
+
+## Components
+- Keep components consistent
+- Use proper theming
+- Implement proper variants
+- Handle state styles
+- Use proper inheritance
+
+## Performance
+- Optimize CSS bundles
+- Use proper selectors
+- Handle critical CSS
+- Optimize animations
+- Minimize repaints
+
+## Maintenance
+- Keep styles organized
+- Remove unused styles
+- Update documentation
+- Maintain style guide
+- Review style usage 

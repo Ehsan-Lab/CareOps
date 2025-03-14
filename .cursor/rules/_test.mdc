@@ -1,0 +1,71 @@
+# Testing Rules
+
+## Test Organization
+- Group related tests
+- Use descriptive test names
+- Follow AAA pattern (Arrange-Act-Assert)
+- Keep tests focused and atomic
+- Maintain test independence
+
+## Test Coverage
+- Aim for high coverage
+- Test edge cases
+- Test error scenarios
+- Test async operations
+- Test UI interactions
+
+## Test Structure
+- Use proper test hooks
+- Implement proper setup/teardown
+- Use proper assertions
+- Mock external dependencies
+- Use proper test utilities
+
+## Testing Best Practices
+- Write maintainable tests
+- Avoid test duplication
+- Use proper test data
+- Clean up after tests
+- Use proper test isolation
+
+## Integration Testing
+- Test component integration
+- Test API integration
+- Test database operations
+- Test authentication flows
+- Test error handling
+
+## E2E Testing
+- Test critical user flows
+- Test form submissions
+- Test navigation
+- Test error scenarios
+- Test performance
+
+## Test Data
+- Use proper test fixtures
+- Implement proper factories
+- Use meaningful test data
+- Clean up test data
+- Handle test database
+
+## Test Maintenance
+- Keep tests up to date
+- Remove obsolete tests
+- Update test documentation
+- Maintain test utilities
+- Review test coverage
+
+## Performance Testing
+- Test load times
+- Test resource usage
+- Test concurrent operations
+- Test memory usage
+- Test network operations
+
+## Security Testing
+- Test authentication
+- Test authorization
+- Test input validation
+- Test data protection
+- Test error handling 
