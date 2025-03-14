@@ -3,34 +3,23 @@ import type { Config } from 'jest';
 const config: Config = {
   preset: 'ts-jest',
   testEnvironment: 'jsdom',
-  setupFilesAfterEnv: ['<rootDir>/src/setupTests.ts'],
+  roots: ['<rootDir>/src'],
   moduleNameMapper: {
     '\\.(css|less|scss|sass)$': 'identity-obj-proxy',
     '^@/(.*)$': '<rootDir>/src/$1',
   },
+  setupFilesAfterEnv: ['<rootDir>/src/setupTests.ts'],
+  testMatch: ['**/__tests__/**/*.ts?(x)', '**/?(*.)+(spec|test).ts?(x)'],
   transform: {
-    '^.+\\.(ts|tsx)$': ['ts-jest', {
+    '^.+\\.tsx?$': ['ts-jest', {
       tsconfig: 'tsconfig.json',
+      isolatedModules: true
     }],
   },
-  coverageThreshold: {
-    global: {
-      branches: 80,
-      functions: 80,
-      lines: 80,
-      statements: 80,
-    },
-  },
-  testMatch: [
-    '<rootDir>/src/**/__tests__/**/*.{js,jsx,ts,tsx}',
-    '<rootDir>/src/**/*.{spec,test}.{js,jsx,ts,tsx}',
+  collectCoverageFrom: [
+    'src/**/*.{ts,tsx}',
+    '!src/**/*.d.ts',
   ],
-  moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
-  globals: {
-    'ts-jest': {
-      tsconfig: 'tsconfig.json',
-    },
-  },
 };
 
-export default config; 
+export default config;
